@@ -93,6 +93,32 @@ def preprocess_and_write(omni_file, header_file, omni_rtn_file=None, headers_rtn
   df.to_csv(output_csv, index=False)
 
 
+def write_ssn_file():
+  col_specs = (
+    (0, 4), (6, 7), (9, 10),
+    (12, 19), (21, 24), (26, 30),
+    (34, 35)
+  )
+
+  df = pd.read_fwf('../res/ssn/silso_daily.txt', header=None, nan_values=[-1])
+  
+  headers = []
+  with open('../res/ssn/silso_headers.txt', 'r', encoding='utf-8') as infile:
+    headers = [line.rstrip("\n") for line in infile]
+
+  df.columns = headers
+
+  # Convert Year, DecimalDay, Hour into DateTime
+  datetimes = []
+  for year, month, day in zip(df['Year'], df['Month'], df['Day']):
+    datetimes.append(datetime.datetime.strptime(f'{year}-{month}-{day}', '%Y-%m-%d').date())
+
+  df['DateTime'] = datetimes
+
+  df.to_pickle('../res/ssn/silso_daily.pkl')
+  df.to_csv('../res/ssn/silso_daily.csv', index=False)
+
+
 if __name__ == "__main__":
   omni_hr_file = '../res/OMNI/omni_hourly.dat'
   omni_day_file = '../res/OMNI/omni_daily.dat'
@@ -103,6 +129,7 @@ if __name__ == "__main__":
   omni_daily_rtn_file = '../res/OMNI/omni_m_daily.dat'
   headers_rtn_file = '../res/OMNI/keys_m.csv'
 
-  preprocess_and_write(omni_hr_file, headers_file, omni_hr_rtn_file, headers_rtn_file, output_suffix="_hourly", cadence="hourly")
-  preprocess_and_write(omni_day_file, headers_file, omni_daily_rtn_file, headers_rtn_file, output_suffix="_daily", cadence="daily")
-  preprocess_and_write(omni_yr_file, headers_file, output_suffix="_yearly", cadence="yearly")
+  write_ssn_file()
+  # preprocess_and_write(omni_hr_file, headers_file, omni_hr_rtn_file, headers_rtn_file, output_suffix="_hourly", cadence="hourly")
+  # preprocess_and_write(omni_day_file, headers_file, omni_daily_rtn_file, headers_rtn_file, output_suffix="_daily", cadence="daily")
+  # preprocess_and_write(omni_yr_file, headers_file, output_suffix="_yearly", cadence="yearly")

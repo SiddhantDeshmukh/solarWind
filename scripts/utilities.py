@@ -13,7 +13,6 @@ powerlaw = lambda x, amp, index: amp * (x**index)
 fitfunc = lambda p, x: p[0] + p[1] * x
 errfunc = lambda p, x, y: y - fitfunc(p, x)
 
-
 def chunk_list(list, n):
     chunks = []
     step = len(list) // n - 1
