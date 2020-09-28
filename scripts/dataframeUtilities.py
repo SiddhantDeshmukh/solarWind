@@ -22,12 +22,15 @@ def get_df(filepath, filetype='infer', index=None):
 
   return df
 
-def concat_dfs(df1, df2):
+def concat_dfs(df1, df2, how='inner'):
   # Assumes DataFrames have the same index
-  return pd.concat([df1, df2])
+  concatenated_df = pd.merge(df1, df2, how=how)
+
+  return concatenated_df
 
 def truncate_year_range(df, year_range):
-  return df[df['YearFlt'].between(year_range[0], year_range[1])].copy()
+  # Assumes 'df' indexed by Date
+  return df[df['DecimalDate'].between(year_range[0], year_range[1])].copy()
   
 def get_correlation(df, columns):
     # Pearson correlation coefficient

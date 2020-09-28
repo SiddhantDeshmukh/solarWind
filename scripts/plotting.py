@@ -21,9 +21,7 @@ def plot_correlations(ax, df, keys, year_range=None, cmap='jet', add_text=True):
     fig, ax = plt.subplots()
 
   plot_df = dfut.truncate_year_range(df, year_range) if year_range else df.copy()
-  print(plot_df)
   correlation = dfut.get_correlation(plot_df, columns=keys)
-  print(correlation)
 
   # Plot heatmap
   ax.imshow(correlation, cmap=cmap)
@@ -44,8 +42,8 @@ def plot_correlations(ax, df, keys, year_range=None, cmap='jet', add_text=True):
   # Add text annotations of correlation coefficients to heatmap
   if add_text:
     for i in range(len(keys)):
-        for j in range(len(keys)):
-            ax.text(j, i, correlation[i, j], ha="center", va="center", color="w")
+      for j in range(len(keys)):
+        ax.text(j, i, f"{correlation.values[i, j]:.3f}", ha="center", va="center", color="w")
 
   return fig, ax  # 'fig' will be None if 'ax' was provided
   
@@ -88,7 +86,7 @@ def plot_key_against_time(ax, df, key, error_key=None, year_range=None, color='k
   if averaging:
     plot_df = plot_df.resample(averaging).mean()
 
-  fig, ax = plot_key(ax, plot_df, x_key='YearFlt', y_key=key, x_error_key=None, y_error_key=error_key, 
+  fig, ax = plot_key(ax, plot_df, x_key='DecimalDate', y_key=key, x_error_key=None, y_error_key=error_key, 
                 color=color, ls=ls, xlabel=xlabel, ylabel=ylabel, xscale=xscale, yscale=yscale)
 
   if fig:
@@ -101,12 +99,8 @@ def plot_key_histogram(ax, df, key, color='gray', bins=None, year_range=None, av
   if ax == None:
     fig, ax = plt.subplots()
 
-
   # Copy DF for plotting so it is not changed outside of this scope
-  if year_range:  # Tuple of [start, end]
-    plot_df = df[df['YearFlt'].between(year_range[0], year_range[1])].copy()
-  else:
-    plot_df = df.copy()
+  plot_df = dfut.truncate_year_range(df, year_range) if year_range else df.copy()
 
   if averaging:
     plot_df = plot_df.resample(averaging).mean()
@@ -133,50 +127,68 @@ def plot_key_histogram(ax, df, key, color='gray', bins=None, year_range=None, av
 
 if __name__ == "__main__":
   df = dfut.concat_dfs(
-    dfut.get_df('../res/OMNI/omni_hourly.pkl', index="DateTime"), 
-    dfut.get_df('../res/ssn/silso_daily.pkl', index="DateTime")
+    dfut.get_df('../res/OMNI/omni_hourly.pkl', index="Date"), 
+    dfut.get_df('../res/ssn/silso_daily.pkl', index="Date"),
+    how='outer',
   )
 
-  # fig, ax = plot_key_against_time(None, df, 'Avg_B', year_range=(2010, 2020), averaging=None)
+  # Trends over time
+  fig, axes = plt.subplots(3, 2, figsize=(12, 16))
 
-  # fig, ax = plot_key_against_time(None, df, 'Bz_GSE', year_range=(2010, 2020), averaging='2D')
-  # plot_key_against_time(ax, df, 'Bx_GSE', year_range=(2010, 2020), color='b', averaging='2D')
-  # plot_key_against_time(ax, df, 'By_GSE', year_range=(2010, 2020), color='r', averaging='2D')
+  # Magnetic Field
+  plot_key_against_time(axes[0][0], df, 'Avg_B_RTN', year_range=(1963.9, 2017), averaging=None, 
+    xlabel="Time", ylabel=r"Avg $B_{RTN}$ [nT]")
 
-  # plt.savefig('../figs/test.svg', bbox_inches="tight")
+  # Velocity
+  plot_key_against_time(axes[0][1], df, 'PlasmaFlowSpeed', year_range=(1963.9, 2017), averaging=None,
+    xlabel="Time", ylabel=r"Velocity [km s$^{-1}$]")
 
-  # # Histograms
-  # fig, axes = plt.subplots(3, 2, figsize=(12, 16))
+  # Density
+  plot_key_against_time(axes[1][0], df, 'ProtonDensity', year_range=(1963.9, 2017), averaging=None,
+    xlabel="Time", ylabel=r"Proton Density [cm$^{-3}$]")
 
-  # # Magnetic field
-  # magnetic_field_bins = np.arange(np.min(df['Avg_B_RTN']), np.max(df['Avg_B_RTN']) + 0.5, 0.5)  # 0.5 nT bin size
-  # plot_key_histogram(axes[0][0], df, 'Avg_B_RTN', bins=magnetic_field_bins, year_range=(1963.9, 2017),
-  #  xlabel=r"Avg $B_{RTN}$ [nT]", ylabel="Frequency", xscale="log")
-
-  # # Velocity
-  # velocity_bins = np.arange(np.min(df['PlasmaFlowSpeed']), np.max(df['PlasmaFlowSpeed']) + 10, 10)  # 10 km/s bin size
-  # plot_key_histogram(axes[0][1], df, 'PlasmaFlowSpeed', bins=velocity_bins, year_range=(1963.9, 2017), 
-  #   xlabel=r"Velocity [km s$^{-1}$]", ylabel="Frequency", xscale="log")
-
-  # # Density
-  # density_bins = np.arange(np.min(df['ProtonDensity']), np.max(df['ProtonDensity']) + 1, 1)  # 1 cm^-3 bin size
-  # plot_key_histogram(axes[1][0], df, 'ProtonDensity', bins=density_bins,  year_range=(1963.9, 2017),
-  #   xlabel=r" Proton Density [cm$^{-3}$]", ylabel="Frequency", xscale="log")
-
-  # # Temperature
-  # temperature_bins = np.arange(np.min(df['Temperature']), np.max(df['Temperature']) + 10000, 10000)  # 10,000 K bin size
-  # plot_key_histogram(axes[1][1], df, 'Temperature', bins=temperature_bins,  year_range=(1965.5, 2017),
-  #   xlabel="Proton Temperature [K]", ylabel="Frequency", xscale="log")
-
-  # # Sunspot Number
-  # ssn_bins = np.arange(np.min(df['SSN']), np.max(df['SSN']) + 10, 10)
-  # plot_key_histogram(axes[2][0], df, 'SSN', bins=ssn_bins, year_range=(1963.9, 2017), 
-  #   xlabel="Sunspot Number", ylabel="Frequency")
-
-  # # Sunspot Number vs Time
-  # plot_key_against_time(axes[2][1], df, 'SSN', year_range=(1963.9, 2017), xlabel="Date", ylabel="Sunspot Number")
+  # Temperature
+  plot_key_against_time(axes[1][1], df, 'Temperature', year_range=(1965.5, 2017), averaging=None,
+    xlabel="Time", ylabel="Proton Temperature [K]")
   
-  # plt.savefig('../figs/test_hist.svg', bbox_inches="tight")
+  # Sunspot Number
+  plot_key_against_time(axes[2][0], df, 'SSN', year_range=(1963.9, 2017), averaging=None,
+    xlabel="Time", ylabel="Sunspot Number")
+
+  plt.savefig('../figs/test.svg', bbox_inches="tight")
+
+  # Histograms
+  fig, axes = plt.subplots(3, 2, figsize=(12, 16))
+
+  # Magnetic field
+  magnetic_field_bins = np.arange(np.min(df['Avg_B_RTN']), np.max(df['Avg_B_RTN']) + 0.5, 0.5)  # 0.5 nT bin size
+  plot_key_histogram(axes[0][0], df, 'Avg_B_RTN', bins=magnetic_field_bins, year_range=(1963.9, 2017),
+   xlabel=r"Avg $B_{RTN}$ [nT]", ylabel="Frequency", xscale="log")
+
+  # Velocity
+  velocity_bins = np.arange(np.min(df['PlasmaFlowSpeed']), np.max(df['PlasmaFlowSpeed']) + 10, 10)  # 10 km/s bin size
+  plot_key_histogram(axes[0][1], df, 'PlasmaFlowSpeed', bins=velocity_bins, year_range=(1963.9, 2017), 
+    xlabel=r"Velocity [km s$^{-1}$]", ylabel="Frequency", xscale="log")
+
+  # Density
+  density_bins = np.arange(np.min(df['ProtonDensity']), np.max(df['ProtonDensity']) + 1, 1)  # 1 cm^-3 bin size
+  plot_key_histogram(axes[1][0], df, 'ProtonDensity', bins=density_bins,  year_range=(1963.9, 2017),
+    xlabel=r"Proton Density [cm$^{-3}$]", ylabel="Frequency", xscale="log")
+
+  # Temperature
+  temperature_bins = np.arange(np.min(df['Temperature']), np.max(df['Temperature']) + 10000, 10000)  # 10,000 K bin size
+  plot_key_histogram(axes[1][1], df, 'Temperature', bins=temperature_bins,  year_range=(1965.5, 2017),
+    xlabel="Proton Temperature [K]", ylabel="Frequency", xscale="log")
+
+  # Sunspot Number
+  ssn_bins = np.arange(np.min(df['SSN']), np.max(df['SSN']) + 10, 10)
+  plot_key_histogram(axes[2][0], df, 'SSN', bins=ssn_bins, year_range=(1963.9, 2017), 
+    xlabel="Sunspot Number", ylabel="Frequency")
+
+  # Sunspot Number vs Time
+  plot_key_against_time(axes[2][1], df, 'SSN', year_range=(1963.9, 2017), xlabel="Date", ylabel="Sunspot Number")
+  
+  plt.savefig('../figs/test_hist.svg', bbox_inches="tight")
 
   # SSN correlations
   fig, axes = plt.subplots(3, 2, figsize=(12, 16))
