@@ -7,3 +7,4 @@ texfiles/*.log
 texfiles/*.fls
 texfiles/*.out
 texfiles/*.synctex.gz
+scripts/tools
