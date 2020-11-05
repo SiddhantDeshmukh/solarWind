@@ -1,7 +1,5 @@
-# %%
-from logging import error
-from bokeh.core.validation import errors
 import heliopy.data.omni as omni
+from llvmlite.ir.values import Value
 import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
@@ -9,8 +7,6 @@ from astropy.units import Quantity
 from datetime import datetime
 import numpy as np
 from typing import Union, Tuple
-
-from AnEn_functions import observed_after_t0
 
 
 def get_omni_rtn_data(start_time, end_time):
@@ -98,7 +94,6 @@ def weight_matrix(matrix: np.array, weighting_type: Union[str, np.array]) -> np.
 
 def get_best_analogues(df: pd.DataFrame, error_key: str, num_analogues: int):
   # Get a DataFrame of 'n' analogues with the smallest errors (stored in 'error_column' of 'df')
-  print(type(df))
   analogue_df = df.nsmallest(num_analogues, error_key)  # for DF, specify column
   # analogue_df = df.nsmallest(num_analogues)  # for Series, no column
   # analogue_df = analogue_df.sort_values(by='index')
@@ -167,24 +162,25 @@ def get_analogues(analogue_df: pd.DataFrame, full_data_df: pd.DataFrame, data_ke
   # Sample based on temporal resolution
   num_points = int(round_down(training_window, temporal_resolution) / temporal_resolution  + round_down(lead_time, temporal_resolution) / temporal_resolution) #number of 3-hourly datapoints each analogue period contains
   analogue_matrix = np.full((len(analogue_df), num_points), np.NaN)
-  print(analogue_matrix.shape)
-  print(training_window, lead_time)
-
-  # How many points should be in the analogue, 24 or 48?
-  # Carl's code ends up with 15 due to the sampling he uses, I would rather
-  # use all 24 hourly points since this isn't using the 'blockout' data?
 
   for i in range(len(analogue_df)):
-    # print(end_time[i] - start_time[i])
+    # Slice to start - end indices
     analogue = full_data_df[(full_data_df.index > start_time[i]) & (full_data_df.index <= end_time[i])]
-    print(len(analogue.values))
-    # try: 
-    analogue_matrix[i] = analogue.values
-    # except: #likely due to analogue period running off end of data or into the blocked out period
-    #   nan_length = int(int(lead_time.value / temporal_resolution.value / temporal_resolution.value) + int(training_window.value / 3) + 1 - len(analogue.values)) # find how many values cannot be found
-    #   analogue_matrix[i] = np.concatenate((analogue.values, np.full(nan_length ,np.NaN))) #saves the data values that can be found along with NaNs in the output array
     
-    return analogue_matrix
+    # Resample based on temporal resolution
+    # Note resampling Series like this changes the start and end labels, 
+    # so the left interval is closed and the right interval is truncated
+    # if necessary
+
+    # There must be a better way!
+    analogue = analogue.resample(f'{int(temporal_resolution.value)}{temporal_resolution.unit}', closed='left').mean()
+    try:
+      analogue_matrix[i] = analogue.values
+    except ValueError:  # truncate analogue on right interval
+      analogue = analogue[:-1]
+      analogue_matrix[i] = analogue.values
+
+  return analogue_matrix
 
 
 def compute_analogue_median(analogue_matrix: np.array):
@@ -204,16 +200,6 @@ start_time = (datetime(2017, 1, 1))
 end_time = (datetime(2018, 2, 28))
 
 omni_data = get_omni_rtn_data(start_time, end_time)
-
-# fig, axes = plt.subplots(1, 2)
-
-# br_data = omni_data.to_dataframe()['BR']
-# velocity_data = omni_data.to_dataframe()['V']
-
-# axes[0].plot(br_data, label="B_r")
-# axes[1].plot(velocity_data, label="Velocity")
-
-# plt.savefig('./omni_test.svg')
 
 # AnEn using pre-loaded data assuming DateTime indices
 # Written for use with CDAWeb OMNI datasets or any Pandas DataFrame
@@ -242,20 +228,37 @@ training_data = slice_training_data(data, start_time, training_window)
 squared_error_before = calculate_error_matrix(data_before.values, training_data.values)
 squared_error_after = calculate_error_matrix(data_after.values, training_data.values)
 
-square_error = np.concatenate([squared_error_before, squared_error_after])
+squared_error = np.concatenate([squared_error_before, squared_error_after])
 
 # Concatenate 'before' and 'after' DataFrames
 data = pd.concat([data_before.iloc[len(training_data) - 1:], data_after.iloc[len(training_data) - 1:]])
 
 # Calculated mean of squared error (again, should support different metrics)
-wmse = weight_matrix(square_error, weighting_type='linear')  # add weighting type as input
+wmse = weight_matrix(squared_error, weighting_type='linear')  # add weighting type as input
 
 # Get analogues based on closest 'n' MSE matches
 error_key = 'wmse'
 analogue_df = wmse_n_non_overlapping(num_analogues, error_key, wmse, data, training_window)
 analogue_matrix = get_analogues(analogue_df, data, key, training_window, forecast_window, temporal_resolution)
-analogue_weighted_mean = compute_analogue_median(analogue_matrix)
+analogue_weighted_median = compute_analogue_median(analogue_matrix)
 
 # Get data after forecast
-observed_data_after = observed_after_t0(data, start_time, forecast_window)
+observed_data_after = get_data_after_forecast_time(data, start_time, forecast_window)
 
+# Plot predictions
+fig, axes = plt.subplots(1, 2)
+
+t0_index = int(round_down(training_window, temporal_resolution) / temporal_resolution)
+num_points = len(analogue_weighted_median)
+xgrid = temporal_resolution * np.linspace(-t0_index+1, num_points - t0_index, num_points)
+
+observed_data = pd.concat((training_data, observed_data_after))
+
+axes[1].plot(observed_data, label="Observations")
+axes[0].plot(xgrid, analogue_matrix.T, color='lightgrey')
+axes[0].plot(xgrid, analogue_weighted_median, label="Analogue Median", color='red')
+axes[0].legend()
+axes[0].set_xlabel(r'Time from $t_0$ (hours)')
+axes[0].set_ylabel(r'$B_r (nT)$')
+
+plt.savefig('./omni_AnEn.svg')

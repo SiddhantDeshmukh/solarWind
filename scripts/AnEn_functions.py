@@ -234,10 +234,8 @@ def get_analogues(analogue_df, all_data_df, training_window, lead_time, temporal
     
     # print(num_points)
     for i in range(len(analogue_df)):
-        # print(-(start_time[i] - end_time[i]) / 3600)        
-
+        # print(-(start_time[i] - end_time[i]) / 3600)
         analogue = all_data_df[(all_data_df['datetime'] > start_time.iloc[i]) & (all_data_df['datetime'] <= end_time.iloc[i])] #get data for each point in analogue period
-        print(len(analogue['data'].values))
         # try:
         analogue_matrix[i] = analogue['data'].values #save into a matrix
         # except: #likely due to analogue period running off end of data or into the blocked out period
@@ -369,6 +367,9 @@ def plot_analogue_forecast(file_path, t0, training_window, forecast_length, weig
 
     fig, ax = plt.subplots()
     num_points = len(analogue_weighted_median)
+
+    print(t0_index, num_points)
+
     xgrid = temporal_resolution * np.linspace(-t0_index+1, num_points - t0_index, num_points)
     ax.axvline(0, linestyle='--', color='lightgrey')
     ax.plot(xgrid, np.transpose(analogue_matrix), color='lightgrey')
