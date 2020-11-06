@@ -181,6 +181,7 @@ def remove_overlapping_analogues(analogue_df, training_window):
                 my_df = my_df.drop(i + 1) #delete worste analogue
                 my_df.index = range(len(my_df))#reset index as consecutive integers
             my_df.index = range(len(my_df)) #reset index as consecutive integers
+        
         i = i+1 #change which analogue is compared to the others
         if (i < len(analogue_df)-2):
             break
