@@ -1,5 +1,4 @@
 import heliopy.data.omni as omni
-from llvmlite.ir.values import Value
 import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
@@ -7,6 +6,15 @@ from astropy.units import Quantity
 from datetime import datetime
 import numpy as np
 from typing import Union, Tuple
+import math
+
+
+# Move to list utilities
+def get_middle_idx(list_):
+  # Note this always rounds down
+  middle_idx = math.trunc(len(list_) / 2)
+
+  return middle_idx
 
 
 def get_omni_rtn_data(start_time, end_time):
@@ -189,9 +197,18 @@ def compute_analogue_median(analogue_matrix: np.array):
   return analogue_median
 
 
-def get_data_after_forecast_time(df: pd.DataFrame, forecast_time: Quantity, lead_time: Quantity):
-  end_time = (forecast_time + time_window_to_time_delta(lead_time))
-  data_after_forecast = df[(df.index > forecast_time) & (df.index <= end_time)]
+def get_data_after_forecast_time(df: pd.DataFrame, forecast_time: pd.Timestamp, forecast_window: Quantity):
+  end_time = (forecast_time + time_window_to_time_delta(forecast_window))
+
+  assert end_time > forecast_time
+
+  mask_before = (df.index > forecast_time)
+  mask_after = (df.index <= end_time)
+  mask = mask_before & mask_after
+
+  assert len([item for item in mask if item == True]) > 0
+
+  data_after_forecast = df[mask]
 
   return data_after_forecast
 
@@ -204,25 +221,25 @@ omni_data = get_omni_rtn_data(start_time, end_time)
 # AnEn using pre-loaded data assuming DateTime indices
 # Written for use with CDAWeb OMNI datasets or any Pandas DataFrame
 # with a DateTime index
-start_time = pd.Timestamp(2017,12,5, 10, 30)  # read this in
+start_time = pd.Timestamp(2017, 12, 5, 10, 0)  # read this in
 training_window = 24 * (u.hr)  # in hours, read this in
 forecast_window = 24 * (u.hr)  # in hours, read this in
 temporal_resolution = 3 * (u.hr)  # in hours, read this in
 block_out_period = 1 * (u.hr)
 key = 'BR'  # Take this in as a parameter
-data = omni_data.to_dataframe()[key]  # Take DF in as a parameter
+observed_data = omni_data.to_dataframe()[key]  # Take DF in as a parameter
 num_analogues = 10  # Take in as parameter
 
 
-# Sample training window and forecast length based on temporal resolution
+# Sample windows based on temporal resolution
 training_window = round_down(training_window, temporal_resolution)
 forecast_window = round_down(forecast_window, temporal_resolution)
 
 # Block-out data
-data_before, data_after = slice_df_using_blockout(data, start_time, block_out_period)
+data_before, data_after = slice_df_using_blockout(observed_data, start_time, block_out_period)
 
 # Get training window data
-training_data = slice_training_data(data, start_time, training_window)
+training_data = slice_training_data(observed_data, start_time, training_window)
 
 # Get error before and after 'block out' period
 squared_error_before = calculate_error_matrix(data_before.values, training_data.values)
@@ -243,20 +260,25 @@ analogue_matrix = get_analogues(analogue_df, data, key, training_window, forecas
 analogue_weighted_median = compute_analogue_median(analogue_matrix)
 
 # Get data after forecast
-observed_data_after = get_data_after_forecast_time(data, start_time, forecast_window)
+observed_data_after = get_data_after_forecast_time(observed_data, start_time, forecast_window)
 
 # Plot predictions
 fig, axes = plt.subplots(1, 2)
 
-t0_index = int(round_down(training_window, temporal_resolution) / temporal_resolution)
-num_points = len(analogue_weighted_median)
-xgrid = temporal_resolution * np.linspace(-t0_index+1, num_points - t0_index, num_points)
+# t0_index = int(round_down(training_window, temporal_resolution) / temporal_resolution)
+analogue_middle_index = get_middle_idx(analogue_weighted_median)
+num_analogue_points = len(analogue_weighted_median)
+x_grid = temporal_resolution * np.linspace(-analogue_middle_index+1, num_analogue_points - analogue_middle_index, num_analogue_points)
 
+# This overwrites previous 'observed_data'
 observed_data = pd.concat((training_data, observed_data_after))
+observed_middle_idx = get_middle_idx(observed_data)
+num_observed_points = len(observed_data)
+x_grid_observed = np.linspace(-observed_middle_idx+1, num_observed_points - observed_middle_idx, num_observed_points)
 
-axes[1].plot(observed_data, label="Observations")
-axes[0].plot(xgrid, analogue_matrix.T, color='lightgrey')
-axes[0].plot(xgrid, analogue_weighted_median, label="Analogue Median", color='red')
+axes[0].plot(x_grid_observed, observed_data, label="Observations")
+axes[0].plot(x_grid, analogue_matrix.T, color='lightgrey')
+axes[0].plot(x_grid, analogue_weighted_median, label="Analogue Median", color='red')
 axes[0].legend()
 axes[0].set_xlabel(r'Time from $t_0$ (hours)')
 axes[0].set_ylabel(r'$B_r (nT)$')

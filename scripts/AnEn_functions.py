@@ -307,8 +307,10 @@ def main(file_path, t0, training_window, forecast_length, weighting_to_recent=Fa
     :return: observations and analogues
     '''
     preliminary_input_checks(t0, training_window, forecast_length, weighting_to_recent)
+    
     training_window = round_down(training_window, temporal_resolution)
     forecast_length = round_down(forecast_length, temporal_resolution)
+
     t0 = t0.value//10**9 # convert to unix time
     df_all = read_data(file_path)
     if block_out:
