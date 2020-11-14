@@ -1,4 +1,3 @@
-from logging import error
 import heliopy.data.omni as omni
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -23,6 +22,7 @@ def get_omni_rtn_data(start_time, end_time):
   omni_data = omni._omni(start_time, end_time, identifier=identifier, intervals='yearly', warn_missing_units=False)
 
   return omni_data
+
 
 def time_window_to_time_delta(time_window: Quantity) -> pd.Timedelta:
   value, unit = time_window.value, str(time_window.unit)
@@ -241,8 +241,10 @@ def run_analogue_ensemble(observed_data: pd.Series,
   squared_error_after = calculate_error_matrix(observed_data_after.values, training_data.values)
   squared_error_matrix = np.concatenate([squared_error_before, squared_error_after])
 
+  # This might be the error in the plot
   observed_data = pd.concat([observed_data_before.iloc[len(training_data) - 1:], observed_data_after.iloc[len(training_data) - 1:]])
-  
+  # //
+
   # Calculate weighted mean of squared error
   wmse = weight_matrix(squared_error_matrix, weighting_type='linear')
   error_key = 'wmse'
