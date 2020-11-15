@@ -8,3 +8,5 @@ texfiles/*.fls
 texfiles/*.out
 texfiles/*.synctex.gz
 scripts/tools
+*.ipynb_checkpoints
+
