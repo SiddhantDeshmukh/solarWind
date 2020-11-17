@@ -22,9 +22,8 @@ def deep_rnn():
 
 def lstm_model():
   model = keras.models.Sequential([
-    keras.layers.LSTM(20, return_sequences=True, input_shape=[None, 1]),
-    keras.layers.LSTM(20, return_sequences=True),
-    keras.layers.TimeDistributed(keras.layers.Dense(10))
+    keras.layers.LSTM(20, activation="linear", name="lstm_initial", input_shape=[None, 1]),
+    keras.layers.Dense(1, name="dense_final", activation="linear")
   ])
 
   return model
