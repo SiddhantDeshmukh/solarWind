@@ -6,6 +6,8 @@ import tensorflow.keras as keras
 import astropy.units as u
 from datetime import datetime
 import rnn
+from baseline_metrics import naive_forecast_start, naive_forecast_end, \
+  mean_forecast, median_forecast
 
 #%%
 def get_omni_rtn_data(start_time: datetime, end_time: datetime):
@@ -92,4 +94,13 @@ if __name__ == "__main__":
   # Test set evaluation
   model.evaluate(inputs_test, outputs_test)
 
+  naive_start_test = naive_forecast_start(inputs_test)
+  naive_end_test = naive_forecast_end(inputs_test)
+  mean_test = mean_forecast(inputs_test)
+  median_test = median_forecast(inputs_test)
+
+  print(naive_start_test.shape)
+  print(naive_end_test.shape)
+  print(mean_test.shape)
+  print(median_test.shape)
 # %%
