@@ -8,6 +8,7 @@ from datetime import datetime
 import rnn
 from baseline_metrics import naive_forecast_start, naive_forecast_end, \
   mean_forecast, median_forecast
+from loss_functions import mse, rmse
 
 #%%
 def get_omni_rtn_data(start_time: datetime, end_time: datetime):
@@ -90,17 +91,31 @@ if __name__ == "__main__":
     callbacks=keras.callbacks.EarlyStopping(restore_best_weights=True, patience=30)
     )
 
-# %%
+  # %%
   # Test set evaluation
   model.evaluate(inputs_test, outputs_test)
 
+  # Baselines
   naive_start_test = naive_forecast_start(inputs_test)
   naive_end_test = naive_forecast_end(inputs_test)
   mean_test = mean_forecast(inputs_test)
   median_test = median_forecast(inputs_test)
 
-  print(naive_start_test.shape)
-  print(naive_end_test.shape)
-  print(mean_test.shape)
-  print(median_test.shape)
+  # Check MSE and RMSE of each baseline
+  mse_naive_start, rmse_naive_start = mse(naive_start_test, outputs_test), rmse(naive_start_test, outputs_test)
+  mse_naive_end, rmse_naive_end = mse(naive_end_test, outputs_test), rmse(naive_end_test, outputs_test)
+  mse_mean, rmse_mean = mse(mean_test, outputs_test), rmse(mean_test, outputs_test)
+  mse_median, rmse_median = mse(median_test, outputs_test), rmse(median_test, outputs_test)
+
+
+  def print_metrics(baseline: str, mse_value: float, rmse_value: float) -> None:
+    print(f"{baseline}: MSE = {mse_value:.3f} \t RMSE = {rmse_value:.3f}")
+
+  # Compare baseline metrics to test set evaluation
+  baselines = ["Naive start", "Naive end", "Mean", "Median"]
+  mse_metrics = [mse_naive_start, mse_naive_end, mse_mean, mse_median]
+  rmse_metrics = [rmse_naive_start, rmse_naive_end, rmse_mean, rmse_median]
+
+  for baseline, mse_metric, rmse_metric in zip(baselines, mse_metrics, rmse_metrics):
+    print_metrics(baseline, mse_metric, rmse_metric)
 # %%
