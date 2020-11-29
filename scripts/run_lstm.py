@@ -4,13 +4,16 @@ import heliopy.data.omni as omni
 import matplotlib.pyplot as plt
 import tensorflow.keras as keras
 import astropy.units as u
-from datetime import datetime
+from datetime import datetime, timedelta
+from analogue_ensemble import time_window_to_time_delta
 import rnn
 from baseline_metrics import naive_forecast_start, naive_forecast_end, \
   mean_forecast, median_forecast
 from loss_functions import mse, rmse
+import pandas as pd
 
-#%%
+from rnn import lstm_model
+
 def get_omni_rtn_data(start_time: datetime, end_time: datetime):
   identifier = 'OMNI_COHO1HR_MERGED_MAG_PLASMA'  # COHO 1HR data
   omni_data = omni._omni(start_time, end_time, identifier=identifier, intervals='yearly', warn_missing_units=False)
@@ -42,7 +45,8 @@ def split_into_24_hour_sections(data: np.array):
   return model_inputs, model_outputs
 
 
-def split_train_val_test(input_data: np.array, output_data: np.array):
+def split_train_val_test(input_data: np.array, output_data: np.array,
+  start_timestamp=None):
   # Split based on hard-coded indices present in OMNI data
   # Order is train -> validation -> test
   train_idx_end = 134929
@@ -53,7 +57,46 @@ def split_train_val_test(input_data: np.array, output_data: np.array):
   inputs_val, outputs_val = input_data[train_idx_end: val_idx_end], output_data[train_idx_end: val_idx_end]
   inputs_test, outputs_test = input_data[val_idx_end:], output_data[val_idx_end:]
 
-  return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test
+
+  # If 'start_timestamp' was given, calculate TimeStamps validation and
+  # test start
+  if start_timestamp is not None:
+    # Assuming hourly cadence (OMNI data)
+    validation_timestamp = start_timestamp + time_window_to_time_delta(train_idx_end *u.hr)
+    test_timestamp = validation_timestamp + time_window_to_time_delta(val_size * u.hr)
+
+    return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test, validation_timestamp, test_timestamp
+  
+  else:
+    return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test
+
+
+def lstm_input_to_analogue_input(lstm_data: np.array,
+  start_timestamp: pd.Timestamp) -> list:
+  # 'lstm_data' is a 3D array with dimensions (batch_size, time_step, 1)
+  # (1 is for 'univariate')
+  # Create a list with entries of size 2 * 'time_step' (equal to
+  # 'training_window' + 'forecast_window')
+  analogue_input_data = []
+  done_slicing = False
+  idx = 0
+  forecast_time = start_timestamp
+  time_step = lstm_data.shape[1]
+
+  while not done_slicing:
+    analogue_data = lstm_data[idx:idx + 2]
+    forecast_time += time_window_to_time_delta(time_step * u.hr)
+
+    # data for analogue ensemble is a tuple of (forecast_time, data)
+    # where the 'data' includes both training and forecast (split it based
+    # on forecast_time time stamp)
+    analogue_input_data.append((forecast_time, analogue_data.flatten()))
+    idx += 2
+
+    if idx >= len(lstm_data):
+      done_slicing = True
+
+  return analogue_input_data
 
 
 # Try out an LSTM
@@ -64,6 +107,8 @@ if __name__ == "__main__":
   INPUT_LENGTH = 24 
 
   data = get_omni_rtn_data(START_TIME, END_TIME).to_dataframe()
+
+  initial_time_stamp = data.index[0]
   
   mag_field_strength, bulk_wind_speed = np.array(data["BR"]), np.array(data["V"])
 
@@ -74,12 +119,20 @@ if __name__ == "__main__":
   # Just using B_R data from here on, need to find a better way to use any OMNI dataset
   # Train/test/validation split
   inputs_train, inputs_val, inputs_test,\
-    outputs_train, outputs_val, outputs_test = \
-    split_train_val_test(mag_field_input, mag_field_output)
+    outputs_train, outputs_val, outputs_test,\
+    validation_timestamp, test_timestamp = \
+    split_train_val_test(mag_field_input, mag_field_output,
+    start_timestamp=initial_time_stamp)
   
   # LSTM model
   model = rnn.lstm_model()
   print(model.summary())
+
+  print(initial_time_stamp, validation_timestamp, test_timestamp)
+  analogue_input_data = lstm_input_to_analogue_input(inputs_train, initial_time_stamp)
+
+  print(len(analogue_input_data), analogue_input_data[0][1].shape)
+
   # %%
   # Compile model
   model.compile(optimizer='rmsprop', loss='mse', metrics=['mae'])
