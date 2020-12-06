@@ -2,13 +2,14 @@
 import numpy as np
 import heliopy.data.omni as omni
 import matplotlib.pyplot as plt
+from numpy import random
 import tensorflow.keras as keras
 import astropy.units as u
-from datetime import datetime, timedelta
-from analogue_ensemble import time_window_to_time_delta
+from datetime import datetime
+from analogue_ensemble import plot_analogue_ensemble, time_window_to_time_delta, run_analogue_ensemble
 import rnn
 from baseline_metrics import naive_forecast_start, naive_forecast_end, \
-  mean_forecast, median_forecast
+  mean_forecast, median_forecast, solar_rotation_forecast
 from loss_functions import mse, rmse
 import pandas as pd
 
@@ -64,38 +65,64 @@ def split_train_val_test(input_data: np.array, output_data: np.array,
     # Assuming hourly cadence (OMNI data)
     validation_timestamp = start_timestamp + time_window_to_time_delta(train_idx_end *u.hr)
     test_timestamp = validation_timestamp + time_window_to_time_delta(val_size * u.hr)
+    end_timestamp = test_timestamp + time_window_to_time_delta(len(input_data[val_idx_end:]) * u.hr)
 
-    return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test, validation_timestamp, test_timestamp
+    return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test, validation_timestamp, test_timestamp, end_timestamp
   
   else:
     return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test
 
 
-def lstm_input_to_analogue_input(lstm_data: np.array,
-  start_timestamp: pd.Timestamp) -> list:
+def lstm_3d_to_analogue_input(lstm_data: np.array,
+    start_timestamp: pd.Timestamp) -> list:
   # 'lstm_data' is a 3D array with dimensions (batch_size, time_step, 1)
   # (1 is for 'univariate')
-  # Create a list with entries of size 2 * 'time_step' (equal to
-  # 'training_window' + 'forecast_window')
-  analogue_input_data = []
-  done_slicing = False
-  idx = 0
-  forecast_time = start_timestamp
-  time_step = lstm_data.shape[1]
+  # Create a dict of length 'batch_size' containing key-value pairs of
+  # 'timestamp': 'value' by flattening data and adding timestamps
+  analogue_input_data = {}
+  
+  # First element of each sequence to uniquely flatten data into single
+  # sequence
+  flat_data = lstm_data[:, 0, 0]  
 
-  while not done_slicing:
-    analogue_data = lstm_data[idx:idx + 2]
-    forecast_time += time_window_to_time_delta(time_step * u.hr)
+  timestamps = []
+  timestamp = start_timestamp
 
-    # data for analogue ensemble is a tuple of (forecast_time, data)
-    # where the 'data' includes both training and forecast (split it based
-    # on forecast_time time stamp)
-    analogue_input_data.append((forecast_time, analogue_data.flatten()))
-    idx += 2
+  for i in range(len(flat_data)):
+    if i > 0:
+      timestamp += pd.Timedelta(1, 'hr')
 
-    if idx >= len(lstm_data):
-      done_slicing = True
+    timestamps.append(timestamp)
 
+  analogue_input_data = {timestamp: value for (timestamp, value) in zip(timestamps, flat_data)}
+  assert len(list(analogue_input_data.keys())) == len(flat_data) 
+  
+  return analogue_input_data
+
+
+def lstm_2d_to_analogue_input(lstm_data: np.array,
+    start_timestamp: pd.Timestamp) -> list:
+  # 'lstm_data' is a 2D array with dimensions (time_step, 1), i.e.,
+  # 'batch_size' has already been sliced and this is a single batch
+  # (1 is for 'univariate')
+  # Create a dict of length 'batch_size' containing key-value pairs of
+  # 'timestamp': 'value' by flattening data and adding timestamps
+  analogue_input_data = {}
+  
+  flat_data = lstm_data[:, 0]  
+
+  timestamps = []
+  timestamp = start_timestamp
+
+  for i in range(len(flat_data)):
+    if i > 0:
+      timestamp += pd.Timedelta(1, 'hr')
+
+    timestamps.append(timestamp)
+
+  analogue_input_data = {timestamp: value for (timestamp, value) in zip(timestamps, flat_data)}
+  assert len(list(analogue_input_data.keys())) == len(flat_data) 
+  
   return analogue_input_data
 
 
@@ -120,18 +147,13 @@ if __name__ == "__main__":
   # Train/test/validation split
   inputs_train, inputs_val, inputs_test,\
     outputs_train, outputs_val, outputs_test,\
-    validation_timestamp, test_timestamp = \
+    validation_timestamp, test_timestamp, end_timestamp = \
     split_train_val_test(mag_field_input, mag_field_output,
     start_timestamp=initial_time_stamp)
   
   # LSTM model
   model = rnn.lstm_model()
   print(model.summary())
-
-  print(initial_time_stamp, validation_timestamp, test_timestamp)
-  analogue_input_data = lstm_input_to_analogue_input(inputs_train, initial_time_stamp)
-
-  print(len(analogue_input_data), analogue_input_data[0][1].shape)
 
   # %%
   # Compile model
@@ -148,27 +170,63 @@ if __name__ == "__main__":
   # Test set evaluation
   model.evaluate(inputs_test, outputs_test)
 
-  # Baselines
+  # Simple baselines
   naive_start_test = naive_forecast_start(inputs_test)
   naive_end_test = naive_forecast_end(inputs_test)
   mean_test = mean_forecast(inputs_test)
   median_test = median_forecast(inputs_test)
+  solar_rotation_test = solar_rotation_forecast(inputs_test)
+
+  # %%
+  # Analogue ensemble baseline (run an AnEn for every point, excluding
+  # 24 points on each edge)
+  # Define properties for forecast
+  # Choose forecast time within start/end time randomly
+  analogue_predictions = []
+
+  # Actually need to go [i:i+2] since it needs 48 hours, not 24
+  for i in range(len(inputs_test)):
+    # Just fill with data for the 24-hour edges of the dataset, can't
+    # make an ensemble for these since the data will run out
+    if i < 1 or i > len(inputs_test) - 1:
+      analogue_prediction = inputs_test[i]
+
+    else:  # perform analogue ensemble prediction
+      data_start_time = test_timestamp + pd.Timedelta(i, unit='hr')
+      training_window = 24 * (u.hr)  # 24 hours before 'forecast_time' 
+      forecast_window = 24 * (u.hr)  # 24 hours after 'forecast_time'
+      num_analogues = 10  # Number of analogues to find for ensemble
+
+      analogue_input_data = lstm_2d_to_analogue_input(inputs_test[i], data_start_time)
+      series = pd.Series(analogue_input_data)
+
+      analogue_matrix, analogue_prediction, observed_trend = \
+        run_analogue_ensemble(series, data_start_time, training_window,
+        forecast_window, num_analogues)
+
+    analogue_predictions.append(analogue_prediction)
+
+  analogue_predictions = np.array(analogue_predictions).flatten()
 
   # Check MSE and RMSE of each baseline
   mse_naive_start, rmse_naive_start = mse(naive_start_test, outputs_test), rmse(naive_start_test, outputs_test)
   mse_naive_end, rmse_naive_end = mse(naive_end_test, outputs_test), rmse(naive_end_test, outputs_test)
   mse_mean, rmse_mean = mse(mean_test, outputs_test), rmse(mean_test, outputs_test)
   mse_median, rmse_median = mse(median_test, outputs_test), rmse(median_test, outputs_test)
-
+  mse_AnEn, rmse_AnEn = mse(analogue_predictions, outputs_test), rmse(analogue_predictions, outputs_test)
 
   def print_metrics(baseline: str, mse_value: float, rmse_value: float) -> None:
     print(f"{baseline}: MSE = {mse_value:.3f} \t RMSE = {rmse_value:.3f}")
 
   # Compare baseline metrics to test set evaluation
-  baselines = ["Naive start", "Naive end", "Mean", "Median"]
-  mse_metrics = [mse_naive_start, mse_naive_end, mse_mean, mse_median]
-  rmse_metrics = [rmse_naive_start, rmse_naive_end, rmse_mean, rmse_median]
+  baselines = ["Naive start", "Naive end", "Mean", "Median", "Analogue Ensemble"]
+  mse_metrics = [mse_naive_start, mse_naive_end, mse_mean, mse_median, mse_AnEn]
+  rmse_metrics = [rmse_naive_start, rmse_naive_end, rmse_mean, rmse_median, rmse_AnEn]
 
   for baseline, mse_metric, rmse_metric in zip(baselines, mse_metrics, rmse_metrics):
     print_metrics(baseline, mse_metric, rmse_metric)
+# %%
+
+# %%
+
 # %%

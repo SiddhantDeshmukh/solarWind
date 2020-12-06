@@ -2,6 +2,24 @@ import numpy as np
 import tensorflow.keras as keras
 
 
+def solar_rotation_forecast(data: np.array) -> np.array:
+  # Use value from 27 days ago (one solar rotation) as the forecast value
+  # Assumes 'data' is a 3D array (as input to TensorFlow), hourly cadence
+  # Data is in 24-hour period chunks, so index backwards by 27 (not
+  # counting the first 27 chunks)
+  forecast = [data[i - 27, 0, 0] for i in range(len(data)) if i > 27]
+
+  # First 27 elements of 'forecast' will be '0'
+  forecast = []
+  for i in range(len(data)):
+    if i > 27:
+      forecast.append(data[i - 27, 0, 0])
+
+    else:
+      forecast.append(0)
+
+  return np.array(forecast)
+
 def naive_forecast_start(data: np.array) -> np.array:
   # Choose the first value of each 24-hour period as the forecast
   # Assumes 'data' is a 3D array (as input to TensorFlow)

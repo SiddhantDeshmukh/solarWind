@@ -35,6 +35,15 @@ def time_window_to_time_delta(time_window: Quantity) -> pd.Timedelta:
   
   return time_delta
 
+  
+def random_timestamp(start: pd.Timestamp, end: pd.Timestamp) -> pd.Timestamp:
+  # Returns on-the-hour random Timestamp between 'start_time' and 'end_time'
+  num_hours = int(((end - start) / np.timedelta64(1, 'h')))
+  random_hours = int(random.random() * num_hours)
+  random_date = start + pd.Timedelta(random_hours, 'hr')
+
+  return random_date
+
 # -------------------------------------------------------------------------
 # List utility functions
 # -------------------------------------------------------------------------
@@ -95,7 +104,8 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
     num_analogues: int) -> Union[np.array, np.array, pd.Series]:
   # Create an analogue ensemble prediction for a given set of data and
   # return the matrix of analogues, the prediction and the observed trend
-  num_points = int(training_window.value)  # Utility for slicing
+  num_training_points = int(training_window.value)  # Utility for slicing
+  num_all_points = int(training_window.value) + int(forecast_window.value)
 
   # Get the pre-forecast and post-forecast data (include forecast after)
   trend_start_time = forecast_time - time_window_to_time_delta(training_window)
@@ -109,6 +119,9 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   observed_end_time = forecast_time + time_window_to_time_delta(training_window)
   observed_mask  = (data.index >= trend_start_time) & (data.index < observed_end_time)
   observed_trend = data[observed_mask]
+
+  assert len(observed_trend) == num_all_points,\
+    f"Observed trend length {len(observed_trend)} does not match {num_all_points}"
 
   # Calculate error matrix *!based on key!*
   mse_matrix = mse_error_matrix(data_before_forecast, current_trend)
@@ -125,7 +138,7 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   analogue_start_times = analogue_df.index
   
   # Full matrix includes analogues before and after forecast
-  analogue_matrix = np.full((len(analogue_df), num_points * 2), np.NaN)
+  analogue_matrix = np.full((len(analogue_df), num_training_points * 2), np.NaN)
   for i, start_time in enumerate(analogue_start_times):
     end_time = start_time + time_window_to_time_delta(training_window) \
       + time_window_to_time_delta(forecast_window)
