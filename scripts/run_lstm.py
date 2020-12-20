@@ -125,7 +125,7 @@ def lstm_2d_to_analogue_input(lstm_data: np.array,
   
   return analogue_input_data
 
-
+#%%
 # Try out an LSTM
 if __name__ == "__main__":
   # In hours for hourly cadence OMNI RTN data
@@ -155,20 +155,21 @@ if __name__ == "__main__":
   model = rnn.lstm_model()
   print(model.summary())
 
+
   # %%
   # Compile model
-  model.compile(optimizer='rmsprop', loss='mse', metrics=['mae'])
+  # model.compile(optimizer='rmsprop', loss='mse', metrics=['mae'])
 
-  # Fit model
-  model.fit(inputs_train, outputs_train, 
-    validation_data=(inputs_val, outputs_val),
-    batch_size=2048, epochs=30,
-    callbacks=keras.callbacks.EarlyStopping(restore_best_weights=True, patience=30)
-    )
+  # # Fit model
+  # model.fit(inputs_train, outputs_train, 
+  #   validation_data=(inputs_val, outputs_val),
+  #   batch_size=2048, epochs=30,
+  #   callbacks=keras.callbacks.EarlyStopping(restore_best_weights=True, patience=30)
+  #   )
 
   # %%
   # Test set evaluation
-  model.evaluate(inputs_test, outputs_test)
+  # model.evaluate(inputs_test, outputs_test)
 
   # Simple baselines
   naive_start_test = naive_forecast_start(inputs_test)
@@ -183,37 +184,54 @@ if __name__ == "__main__":
   # Define properties for forecast
   # Choose forecast time within start/end time randomly
   analogue_predictions = []
+  training_window = 24 * (u.hr)  # 24 hours before 'forecast_time' 
+  forecast_window = 24 * (u.hr)  # 24 hours after 'forecast_time'
+  num_analogues = 10  # Number of analogues to find for ensemble
 
-  # Actually need to go [i:i+2] since it needs 48 hours, not 24
   for i in range(len(inputs_test)):
     # Just fill with data for the 24-hour edges of the dataset, can't
     # make an ensemble for these since the data will run out
-    if i < 1 or i > len(inputs_test) - 1:
+    if i < 1 or i > len(inputs_test) - 2:
       analogue_prediction = inputs_test[i]
 
     else:  # perform analogue ensemble prediction
       data_start_time = test_timestamp + pd.Timedelta(i, unit='hr')
-      training_window = 24 * (u.hr)  # 24 hours before 'forecast_time' 
-      forecast_window = 24 * (u.hr)  # 24 hours after 'forecast_time'
-      num_analogues = 10  # Number of analogues to find for ensemble
+      forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
 
-      analogue_input_data = lstm_2d_to_analogue_input(inputs_test[i], data_start_time)
+      analogue_input_data = lstm_2d_to_analogue_input(np.concatenate(inputs_test[i:i+2]), data_start_time)
+      
       series = pd.Series(analogue_input_data)
 
       analogue_matrix, analogue_prediction, observed_trend = \
-        run_analogue_ensemble(series, data_start_time, training_window,
+        run_analogue_ensemble(series, forecast_time, training_window,
         forecast_window, num_analogues)
 
-    analogue_predictions.append(analogue_prediction)
+      if (np.isnan(analogue_prediction).any()):
+        print("Nan data")
+        print(analogue_matrix)
+        break
 
-  analogue_predictions = np.array(analogue_predictions).flatten()
+      if (i % ((len(inputs_test) - 2) // 1000)) == 0:
+        print(f"Done {i} of {len(inputs_test - 2)}")
+        break
 
+    analogue_predictions.extend(analogue_prediction)
+
+  # analogue_predictions = np.array(analogue_predictions)
+
+  # Need to loop through all data once, adding timestamps, then loop
+  # through again, calling AnEn on it
+
+  # %%
+  # print(np.where(np.isnan(analogue_predictions)))
+  
   # Check MSE and RMSE of each baseline
   mse_naive_start, rmse_naive_start = mse(naive_start_test, outputs_test), rmse(naive_start_test, outputs_test)
   mse_naive_end, rmse_naive_end = mse(naive_end_test, outputs_test), rmse(naive_end_test, outputs_test)
   mse_mean, rmse_mean = mse(mean_test, outputs_test), rmse(mean_test, outputs_test)
   mse_median, rmse_median = mse(median_test, outputs_test), rmse(median_test, outputs_test)
   mse_AnEn, rmse_AnEn = mse(analogue_predictions, outputs_test), rmse(analogue_predictions, outputs_test)
+
 
   def print_metrics(baseline: str, mse_value: float, rmse_value: float) -> None:
     print(f"{baseline}: MSE = {mse_value:.3f} \t RMSE = {rmse_value:.3f}")
@@ -225,8 +243,4 @@ if __name__ == "__main__":
 
   for baseline, mse_metric, rmse_metric in zip(baselines, mse_metrics, rmse_metrics):
     print_metrics(baseline, mse_metric, rmse_metric)
-# %%
-
-# %%
-
-# %%
+  

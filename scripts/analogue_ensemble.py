@@ -111,6 +111,9 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   trend_start_time = forecast_time - time_window_to_time_delta(training_window)
   data_before_forecast = data[data.index < trend_start_time]
 
+  print(data.index)
+  print(trend_start_time)
+  
   # Get the current trend
   current_trend_mask = (data.index >= trend_start_time) & (data.index < forecast_time)
   current_trend = data[current_trend_mask]
@@ -136,13 +139,16 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
 
   # DateTime indices of best-analogues (start times of each)
   analogue_start_times = analogue_df.index
-  
+
   # Full matrix includes analogues before and after forecast
   analogue_matrix = np.full((len(analogue_df), num_training_points * 2), np.NaN)
   for i, start_time in enumerate(analogue_start_times):
     end_time = start_time + time_window_to_time_delta(training_window) \
       + time_window_to_time_delta(forecast_window)
     analogue = data[start_time: end_time].iloc[:-1]
+
+    print(start_time, end_time)
+    print(analogue)
     
     analogue_matrix[i] = analogue
 
