@@ -183,6 +183,11 @@ if __name__ == "__main__":
   # 24 points on each edge)
   # Define properties for forecast
   # Choose forecast time within start/end time randomly
+  # Initialise inputs to AnEn
+  data_start_time = test_timestamp + pd.Timedelta(1, unit='hr')
+  forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
+  analogue_inputs = pd.Series(lstm_2d_to_analogue_input(np.concatenate(inputs_test[1:3]), data_start_time))
+  
   analogue_predictions = []
   training_window = 24 * (u.hr)  # 24 hours before 'forecast_time' 
   forecast_window = 24 * (u.hr)  # 24 hours after 'forecast_time'
@@ -191,7 +196,7 @@ if __name__ == "__main__":
   for i in range(len(inputs_test)):
     # Just fill with data for the 24-hour edges of the dataset, can't
     # make an ensemble for these since the data will run out
-    if i < 1 or i > len(inputs_test) - 2:
+    if i < 2 or i > len(inputs_test) - 2:
       analogue_prediction = inputs_test[i]
 
     else:  # perform analogue ensemble prediction
@@ -199,28 +204,51 @@ if __name__ == "__main__":
       forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
 
       analogue_input_data = lstm_2d_to_analogue_input(np.concatenate(inputs_test[i:i+2]), data_start_time)
-      
-      series = pd.Series(analogue_input_data)
+      analogue_inputs = analogue_inputs.append(pd.Series(analogue_input_data))
 
-      analogue_matrix, analogue_prediction, observed_trend = \
-        run_analogue_ensemble(series, forecast_time, training_window,
-        forecast_window, num_analogues)
-
-      if (np.isnan(analogue_prediction).any()):
-        print("Nan data")
-        print(analogue_matrix)
-        break
-
-      if (i % ((len(inputs_test) - 2) // 1000)) == 0:
+      if (i % ((len(inputs_test) - 2) // 100)) == 0:
         print(f"Done {i} of {len(inputs_test - 2)}")
-        break
+        # break
 
+  analogue_inputs.drop_duplicates(inplace=True)
+  print(len(analogue_inputs))
+      
+  for i in range(len(inputs_test)):
+    data_start_time = test_timestamp + pd.Timedelta(i, unit='hr')
+    forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
+
+    analogue_matrix, analogue_prediction, observed_trend = \
+      run_analogue_ensemble(analogue_inputs, forecast_time, training_window,
+      forecast_window, num_analogues)
+      
     analogue_predictions.extend(analogue_prediction)
 
   # analogue_predictions = np.array(analogue_predictions)
 
   # Need to loop through all data once, adding timestamps, then loop
   # through again, calling AnEn on it
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
 
   # %%
   # print(np.where(np.isnan(analogue_predictions)))

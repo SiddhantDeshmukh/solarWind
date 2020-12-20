@@ -111,11 +111,13 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   trend_start_time = forecast_time - time_window_to_time_delta(training_window)
   data_before_forecast = data[data.index < trend_start_time]
 
-  print(data.index)
-  print(trend_start_time)
+  trend_end_time = forecast_time + time_window_to_time_delta(forecast_window)
+
+  print(len(data[data.index < forecast_time]))
+  print(trend_start_time, forecast_time, trend_end_time)
   
   # Get the current trend
-  current_trend_mask = (data.index >= trend_start_time) & (data.index < forecast_time)
+  current_trend_mask = (data.index >= trend_start_time) & (data.index < trend_end_time)
   current_trend = data[current_trend_mask]
 
   # Get true observations over training and forecast period
