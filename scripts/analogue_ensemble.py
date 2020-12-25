@@ -112,9 +112,6 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   data_before_forecast = data[data.index < trend_start_time]
 
   trend_end_time = forecast_time + time_window_to_time_delta(forecast_window)
-
-  print(len(data[data.index < forecast_time]))
-  print(trend_start_time, forecast_time, trend_end_time)
   
   # Get the current trend
   current_trend_mask = (data.index >= trend_start_time) & (data.index < trend_end_time)
@@ -149,8 +146,11 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
       + time_window_to_time_delta(forecast_window)
     analogue = data[start_time: end_time].iloc[:-1]
 
-    print(start_time, end_time)
-    print(analogue)
+    if len(analogue) != num_training_points * 2:
+      print(f"Warning: Analogue has length {len(analogue)} but should have\
+        length {num_training_points * 2}. Duplicating previous analogue.")
+      
+      analogue = analogue_matrix[i - 1]
     
     analogue_matrix[i] = analogue
 
