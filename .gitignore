@@ -8,3 +8,4 @@ texfiles/*.fls
 texfiles/*.out
 texfiles/*.synctex.gz
 scripts/tools
+scripts/tutorials/pytorch/data/**
