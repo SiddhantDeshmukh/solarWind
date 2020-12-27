@@ -7,6 +7,8 @@ import numpy as np
 import heliopy.data.omni as omni
 import astropy.units as u
 from datetime import datetime
+
+import torch
 from analogue_ensemble import time_window_to_time_delta
 import pandas as pd
 
@@ -21,8 +23,8 @@ def get_omni_rtn_data(start_time: datetime, end_time: datetime):
 
 # Data cleaning
 # =========================================================================
-def remove_nans_from_data(data: np.array, 
-    model_inputs: np.array, model_outputs: np.array):
+def remove_nans_from_data(data: np.ndarray, 
+    model_inputs: np.ndarray, model_outputs: np.ndarray):
   nan_check = np.array([data[i:i + 25] for i in range(len(data) - 25 + 1)])
   model_inputs = model_inputs[np.where([~np.any(np.isnan(i)) for i in nan_check])]
   model_outputs = model_outputs[np.where([~np.any(np.isnan(i)) for i in nan_check])]
@@ -36,7 +38,7 @@ def remove_nans_from_data(data: np.array,
 
 # Data preprocessing (mainly splitting)
 # =========================================================================
-def split_into_24_hour_sections(data: np.array):
+def split_into_24_hour_sections(data: np.ndarray):
   model_inputs = np.array([data[i:i+24] for i in range(len(data) - 24)])[:, :, np.newaxis]
   model_outputs = np.array(data[24:])
 
@@ -46,7 +48,7 @@ def split_into_24_hour_sections(data: np.array):
   return model_inputs, model_outputs
 
 
-def split_train_val_test(input_data: np.array, output_data: np.array,
+def split_train_val_test(input_data: np.ndarray, output_data: np.ndarray,
   start_timestamp=None):
   # Split based on hard-coded indices present in OMNI data
   # Order is train -> validation -> test
@@ -72,9 +74,47 @@ def split_train_val_test(input_data: np.array, output_data: np.array,
   else:
     return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test
 
+
+def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
+    make_tensors=False):
+  # Wrapper function around 'get_omni_rtn_data()' and 'split...()'
+  data = get_omni_rtn_data(start_time, end_time).to_dataframe()
+  initial_timestamp = data.index[0]
+  output_data = {}
+
+  for key in keys:
+    array = np.array(data[key])
+    arr_input, arr_output = split_into_24_hour_sections(array)
+    train_in, val_in, test_in, train_out, val_out, test_out,\
+      val_timestamp, test_timestamp, end_timestamp =\
+        split_train_val_test(arr_input, arr_output,
+                             start_timestamp=initial_timestamp)
+
+    arr_dict = {
+      "train_in": train_in, 
+      "val_in": val_in,
+      "test_in": test_in,
+      "train_out": train_out,
+      "val_out": val_out,
+      "test_out": test_out,
+      "val_timestamp": val_timestamp,
+      "test_timestamp": test_timestamp,
+      "end_timestamp": end_timestamp
+    }
+
+    if make_tensors:  # NumPy ndarray -> PyTorch Tensor
+      for arr_key in arr_dict.keys():
+        if isinstance(arr_dict[arr_key], np.ndarray):
+          arr_dict[arr_key] = torch.from_numpy(arr_dict[arr_key])
+
+    output_data[key] = arr_dict
+
+  return output_data
+
+
 # Analogue ensemble conversion (from LSTM)
 # =========================================================================
-def lstm_3d_to_analogue_input(lstm_data: np.array,
+def lstm_3d_to_analogue_input(lstm_data: np.ndarray,
     start_timestamp: pd.Timestamp) -> list:
   # 'lstm_data' is a 3D array with dimensions (batch_size, time_step, 1)
   # (1 is for 'univariate')
@@ -101,7 +141,7 @@ def lstm_3d_to_analogue_input(lstm_data: np.array,
   return analogue_input_data
 
 
-def lstm_2d_to_analogue_input(lstm_data: np.array,
+def lstm_2d_to_analogue_input(lstm_data: np.ndarray,
     start_timestamp: pd.Timestamp) -> list:
   # 'lstm_data' is a 2D array with dimensions (time_step, 1), i.e.,
   # 'batch_size' has already been sliced and this is a single batch
@@ -128,7 +168,7 @@ def lstm_2d_to_analogue_input(lstm_data: np.array,
 
 # Timestamping
 # =========================================================================
-def add_timestamps_to_data(data: np.array, start_timestamp: pd.Timestamp):
+def add_timestamps_to_data(data: np.ndarray, start_timestamp: pd.Timestamp):
   # 'data' is a 1D array of values. Adds timestamps incrementing upwards
   # by 1 hour per value
   timestamped_data = {}
