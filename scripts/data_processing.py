@@ -103,6 +103,7 @@ def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
     }
 
     if make_tensors:  # NumPy ndarray -> PyTorch Tensor
+      # Reverse dimensions for PyTorch Tensor?
       for arr_key in arr_dict.keys():
         if isinstance(arr_dict[arr_key], np.ndarray):
           arr_dict[arr_key] = torch.from_numpy(arr_dict[arr_key])
