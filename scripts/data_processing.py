@@ -3,12 +3,14 @@
 
 # Imports
 # =========================================================================
+from typing import Dict, Tuple
 import numpy as np
 import heliopy.data.omni as omni
 import astropy.units as u
 from datetime import datetime
 
 import torch
+from torch.functional import Tensor
 from analogue_ensemble import time_window_to_time_delta
 import pandas as pd
 
@@ -76,7 +78,7 @@ def split_train_val_test(input_data: np.ndarray, output_data: np.ndarray,
 
 
 def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
-    make_tensors=False):
+    make_tensors=False, split_mini_batches=False):
   # Wrapper function around 'get_omni_rtn_data()' and 'split...()'
   data = get_omni_rtn_data(start_time, end_time).to_dataframe()
   initial_timestamp = data.index[0]
@@ -103,15 +105,44 @@ def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
     }
 
     if make_tensors:  # NumPy ndarray -> PyTorch Tensor
-      # Reverse dimensions for PyTorch Tensor?
+      # For LSTM, Torch expects [seq_len, batch_size, num_feat]
       for arr_key in arr_dict.keys():
         if isinstance(arr_dict[arr_key], np.ndarray):
-          arr_dict[arr_key] = torch.from_numpy(arr_dict[arr_key])
+          tensor = torch.from_numpy(arr_dict[arr_key])
+          if len(arr_dict[arr_key].shape) == 3:
+            tensor = tensor.transpose(0, 1)
+          arr_dict[arr_key] = tensor
+
+    if split_mini_batches:
+      batch_dim = 1 if make_tensors else 0
+
+      # Write a function to find the number of mini batches based on the
+      # ideal mini batch size
+      arr_dict = split_data_mini_batches(arr_dict, 4000, input_batch_dim=batch_dim)
 
     output_data[key] = arr_dict
 
   return output_data
 
+
+def split_data_mini_batches(data: Dict, num_mini_batches: int,
+  input_batch_dim=0, output_batch_dim=0):
+  # For each 3D Tensor, split into mini-batches
+  for key in data.keys():
+    if isinstance(data[key], torch.Tensor):
+      if len(data[key].shape) == 3:  # input data
+        mini_batches = torch.split(data[key], num_mini_batches, dim=input_batch_dim)
+      
+      elif len(data[key].shape) == 1:  # output data
+        mini_batches = torch.split(data[key], num_mini_batches, output_batch_dim)
+      
+      else:
+        print(f"Warning: shape of '{key}' is not size 3 (input) or 2 (output).")
+        print("Ignoring mini-batches.")
+        mini_batches = data[key]
+    
+      data[key] = mini_batches
+  return data
 
 # Analogue ensemble conversion (from LSTM)
 # =========================================================================
