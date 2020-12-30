@@ -80,7 +80,7 @@ def mse_error_matrix(data_before_forecast: np.array,
   error_matrix = np.square(error_matrix - current_trend.values)
 
   # MSE - take mean over analogues
-  mse_matrix = np.mean(error_matrix, axis=1)
+  mse_matrix = np.nanmean(error_matrix, axis=1)
 
   return mse_matrix
 
