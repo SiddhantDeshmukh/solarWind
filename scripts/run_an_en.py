@@ -2,6 +2,7 @@
 # Imports
 # =========================================================================
 from datetime import datetime
+import data_processing as dp
 import analogue_ensemble as ae
 import astropy.units as u
 from loss_functions import mse
@@ -10,11 +11,13 @@ import numpy as np
 import pandas as pd
 
 
-# Solar cycle datetime structs
+# =========================================================================
+# Solar cycle loading
 # =========================================================================
 solar_cycles_csv = '../res/solar_cycles.csv'
 solar_cycles = pd.read_csv(solar_cycles_csv, index_col=0)
 
+# =========================================================================
 # Datetime utility functions
 # =========================================================================
 def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
@@ -23,12 +26,14 @@ def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
   # %Y-%m-%d by default in the csv) as a datetime
   return datetime.strptime(solar_cycles.loc[cycle][key], fmt)
 
+# =========================================================================
 # JSON Encoding
 # =========================================================================
 def array_to_list(array: np.ndarray):
   # Converts a NumPy array into a list of Python floats
   return list(array.astype(float))
 
+# =========================================================================
 # Data loading
 # =========================================================================
 # Predictions for cycle 21 - 24; use cycle 20 as extra info to find
@@ -37,19 +42,21 @@ START_TIME = datetime_from_cycle(solar_cycles, 20)  # start cycle 20
 FORECAST_START_TIME = datetime_from_cycle(solar_cycles, 21)  # start cycle 21
 END_TIME = datetime_from_cycle(solar_cycles, 24, key='end')  # end cycle 24
 
-data = ae.get_omni_rtn_data(START_TIME, END_TIME).to_dataframe()
+data = dp.get_omni_rtn_data(START_TIME, END_TIME).to_dataframe()
 keys = ['BR', 'V']
 
 data = data[keys]
 output_predictions = []
 
+# =========================================================================
 # Analogue ensemble parameters
 # =========================================================================
 training_window = 24 * (u.hr)
 forecast_window = 24 * (u.hr)
-full_window_timedelta = ae.time_window_to_time_delta(training_window + forecast_window)
+full_window_timedelta = dp.time_window_to_time_delta(training_window + forecast_window)
 num_analogues = 10
 
+# =========================================================================
 # Running analogue ensemble
 # =========================================================================
 # Loop over relevant cycles
@@ -59,7 +66,7 @@ for cycle in cycle_nums:
 
   cycle_start = datetime_from_cycle(solar_cycles, cycle)
   cycle_end = datetime_from_cycle(solar_cycles, cycle, key='end')
-  cycle_data = ae.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
+  cycle_data = dp.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
 
   timestamps = list(cycle_data[keys[0]].keys())
   br_single_predictions = []

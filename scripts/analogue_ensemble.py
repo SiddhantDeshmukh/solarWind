@@ -1,52 +1,17 @@
-import heliopy.data.omni as omni
+import data_processing as dp
 import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
 from astropy.units import Quantity
 from datetime import datetime
 import numpy as np
-from typing import Union, Tuple
+from typing import Union
 import math
 
-from sunpy.timeseries.timeseriesbase import GenericTimeSeries
 
-
-# -------------------------------------------------------------------------
-# Data getting functions
-# -------------------------------------------------------------------------
-def get_omni_rtn_data(start_time: pd.Timestamp, end_time: pd.Timestamp) ->\
-    GenericTimeSeries:
-  identifier = 'OMNI_COHO1HR_MERGED_MAG_PLASMA'  # COHO 1HR data
-  omni_data = omni._omni(start_time, end_time, identifier=identifier, intervals='yearly', warn_missing_units=False)
-
-  return omni_data
-
-# -------------------------------------------------------------------------
-# Time conversion utility functions
-# -------------------------------------------------------------------------
-def time_window_to_time_delta(time_window: Quantity) -> pd.Timedelta:
-  value, unit = time_window.value, str(time_window.unit)
-
-  # More generally, translate Astropy's units into Pandas'
-  if unit == 'h':
-    unit = 'hr'
-    
-  time_delta = pd.Timedelta(value, unit=unit)
-  
-  return time_delta
-
-  
-def random_timestamp(start: pd.Timestamp, end: pd.Timestamp) -> pd.Timestamp:
-  # Returns on-the-hour random Timestamp between 'start_time' and 'end_time'
-  num_hours = int(((end - start) / np.timedelta64(1, 'h')))
-  random_hours = int(random.random() * num_hours)
-  random_date = start + pd.Timedelta(random_hours, 'hr')
-
-  return random_date
-
-# -------------------------------------------------------------------------
+# =========================================================================
 # List utility functions
-# -------------------------------------------------------------------------
+# =========================================================================
 # Move to list utilities
 def get_middle_idx(list_: list) -> int:
   # Note this always rounds down
@@ -54,9 +19,9 @@ def get_middle_idx(list_: list) -> int:
 
   return middle_idx
 
-# -------------------------------------------------------------------------
+# =========================================================================
 # Error matrix functions
-# -------------------------------------------------------------------------
+# =========================================================================
 def create_error_matrix(data_before_forecast: np.array,
     current_trend: np.array) -> np.array:
   error_matrix = np.full((len(data_before_forecast), len(current_trend)), np.NaN)
@@ -95,9 +60,9 @@ def rmse_error_matrix(data_before_forecast: np.array,
 
   return rmse_matrix
 
-# -------------------------------------------------------------------------
+# =========================================================================
 # Analogue Ensemble functions
-# -------------------------------------------------------------------------
+# =========================================================================
 # Refactor to take in a cost function
 def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
     training_window: Quantity, forecast_window: Quantity,
@@ -108,22 +73,24 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   num_all_points = int(training_window.value) + int(forecast_window.value)
 
   # Get the pre-forecast and post-forecast data (include forecast after)
-  trend_start_time = forecast_time - time_window_to_time_delta(training_window)
+  trend_start_time = forecast_time - dp.time_window_to_time_delta(training_window)
   data_before_forecast = data[data.index < trend_start_time]
 
-  trend_end_time = forecast_time + time_window_to_time_delta(forecast_window)
+  trend_end_time = forecast_time + dp.time_window_to_time_delta(forecast_window)
   
   # Get the current trend
   current_trend_mask = (data.index >= trend_start_time) & (data.index < trend_end_time)
   current_trend = data[current_trend_mask]
 
   # Get true observations over training and forecast period
-  observed_end_time = forecast_time + time_window_to_time_delta(training_window)
+  observed_end_time = forecast_time + dp.time_window_to_time_delta(training_window)
   observed_mask  = (data.index >= trend_start_time) & (data.index < observed_end_time)
   observed_trend = data[observed_mask]
 
-  assert len(observed_trend) == num_all_points,\
-    f"Observed trend length {len(observed_trend)} does not match {num_all_points}"
+  # Check length, and if lengths don't match, return a failed state
+  if len(observed_trend) != num_all_points:
+    print(f"Observed trend length {len(observed_trend)} does not match {num_all_points}")
+    return [np.array([np.nan] * num_all_points), observed_trend, pd.DataFrame(None)]
 
   # Calculate error matrix *!based on key!*
   mse_matrix = mse_error_matrix(data_before_forecast, current_trend)
@@ -142,15 +109,21 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   # Full matrix includes analogues before and after forecast
   analogue_matrix = np.full((len(analogue_df), num_training_points * 2), np.NaN)
   for i, start_time in enumerate(analogue_start_times):
-    end_time = start_time + time_window_to_time_delta(training_window) \
-      + time_window_to_time_delta(forecast_window)
+    end_time = start_time + dp.time_window_to_time_delta(training_window) \
+      + dp.time_window_to_time_delta(forecast_window)
     analogue = data[start_time: end_time].iloc[:-1]
 
+    # Check length of analogue
     if len(analogue) != num_training_points * 2:
-      print(f"Warning: Analogue has length {len(analogue)} but should have\
-        length {num_training_points * 2}. Duplicating previous analogue.")
-      
-      analogue = analogue_matrix[i - 1]
+      print(f"Warning: Analogue has length {len(analogue)} but should have length {num_training_points * 2}.")
+
+      if len(analogue) > num_training_points * 2:  # too many points
+        print(f"Taking first {num_training_points * 2} points.")
+        analogue = analogue[:(num_training_points * 2)]
+
+      else:  # not enough points
+        print("Duplicating previous analogue.")
+        analogue = analogue_matrix[i - 1]
     
     analogue_matrix[i] = analogue
 
@@ -159,10 +132,9 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
 
   return analogue_matrix, analogue_prediction, observed_trend
 
-
-# -------------------------------------------------------------------------
+# =========================================================================
 # Plotting functions
-# -------------------------------------------------------------------------
+# =========================================================================
 def plot_analogue_ensemble(ax: plt.Axes, analogue_matrix: np.array, 
     analogue_prediction: np.array, observed_trend: np.array,
     xlabel="Time [h]", ylabel="", title=""):
@@ -202,7 +174,7 @@ if __name__ == "__main__":
   data_end_time = datetime(2018, 2, 28)
 
   # Get OMNI data for specified range
-  omni_data = get_omni_rtn_data(data_start_time, data_end_time).to_dataframe()
+  omni_data = dp.get_omni_rtn_data(data_start_time, data_end_time).to_dataframe()
 
   # Define properties for forecast
   forecast_time = pd.Timestamp(2017, 12, 5, 10, 0)

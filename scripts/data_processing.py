@@ -1,20 +1,21 @@
 # Functions to load and process data, including support for timestamps.
 # Used for setting up LSTM and baseline metrics
 
+# =========================================================================
 # Imports
 # =========================================================================
-from typing import Dict, Tuple
+from typing import Dict
 import numpy as np
 import heliopy.data.omni as omni
 import astropy.units as u
+from astropy.units import Quantity
 from datetime import datetime
 
 import torch
-from torch.functional import Tensor
-from analogue_ensemble import time_window_to_time_delta
 import pandas as pd
 
 
+# =========================================================================
 # Data loading
 # =========================================================================
 def get_omni_rtn_data(start_time: datetime, end_time: datetime):
@@ -23,6 +24,7 @@ def get_omni_rtn_data(start_time: datetime, end_time: datetime):
 
   return omni_data
 
+# =========================================================================
 # Data cleaning
 # =========================================================================
 def remove_nans_from_data(data: np.ndarray, 
@@ -38,6 +40,7 @@ def remove_nans_from_data(data: np.ndarray,
 
   return model_inputs, model_outputs
 
+# =========================================================================
 # Data preprocessing (mainly splitting)
 # =========================================================================
 def split_into_24_hour_sections(data: np.ndarray):
@@ -144,6 +147,7 @@ def split_data_mini_batches(data: Dict, num_mini_batches: int,
       data[key] = mini_batches
   return data
 
+# =========================================================================
 # Analogue ensemble conversion (from LSTM)
 # =========================================================================
 def lstm_3d_to_analogue_input(lstm_data: np.ndarray,
@@ -198,6 +202,7 @@ def lstm_2d_to_analogue_input(lstm_data: np.ndarray,
   
   return analogue_input_data
 
+# =========================================================================
 # Timestamping
 # =========================================================================
 def add_timestamps_to_data(data: np.ndarray, start_timestamp: pd.Timestamp):
@@ -210,3 +215,17 @@ def add_timestamps_to_data(data: np.ndarray, start_timestamp: pd.Timestamp):
 
   return timestamped_data
   
+# =========================================================================
+# Time conversion utility functions
+# =========================================================================
+def time_window_to_time_delta(time_window: Quantity) -> pd.Timedelta:
+  value, unit = time_window.value, str(time_window.unit)
+
+  # More generally, translate Astropy's units into Pandas'
+  if unit == 'h':
+    unit = 'hr'
+    
+  time_delta = pd.Timedelta(value, unit=unit)
+  
+  return time_delta
+
