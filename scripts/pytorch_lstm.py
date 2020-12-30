@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import data_processing as dp
 from datetime import datetime
+import pandas as pd
 
 # %%
 # Networks
@@ -23,13 +24,27 @@ class LSTMNet(nn.Module):
 
     return output
 
+# Datetime utility functions
+# =========================================================================
+def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
+                        key='start_min', fmt='%Y-%m-%d'):
+  # From the 'solar_cycles' DataFrame, get the 'key' datetime (formatted as
+  # %Y-%m-%d by default in the csv) as a datetime
+  return datetime.strptime(solar_cycles.loc[cycle][key], fmt)
+
+
+# =========================================================================
+solar_cycles_csv = '../res/solar_cycles.csv'
+solar_cycles = pd.read_csv(solar_cycles_csv, index_col=0)
+
 # %%
 # Data preprocessing
 # =========================================================================
-START_TIME = (datetime(1995, 1, 1))
-END_TIME = (datetime(2018, 2, 28))
+START_TIME = datetime_from_cycle(solar_cycles, 21)  # start cycle 21
+END_TIME = datetime_from_cycle(solar_cycles, 24, key='end')  # end cycle 24
 
 # Get data split into training, validation, testing in 24 hour sections
+# Change this to have cycle 21 and 22 for training, 23 for val, 24 for test
 data = dp.omni_preprocess(START_TIME, END_TIME, ['BR'],
     make_tensors=True, split_mini_batches=True)['BR']
 

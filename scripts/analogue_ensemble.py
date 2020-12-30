@@ -91,7 +91,7 @@ def rmse_error_matrix(data_before_forecast: np.array,
   # i.e. find the analogues most similar to the trend we have just seen
   # RMSE - take root of mean over analogues
   mse_matrix = mse_error_matrix(data_before_forecast, current_trend)
-  rmse_matrix = np.sqrt(mse_error_matrix)
+  rmse_matrix = np.sqrt(mse_matrix)
 
   return rmse_matrix
 
