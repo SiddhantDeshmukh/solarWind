@@ -1,0 +1,17 @@
+\section{Analogue Ensemble}
+\label{sec:an_en}
+
+We employ the use of an analogue ensemble (AnEn) \cite{owens_an_en},
+\cite{haines_an_en} as a baseline metric to measure our LSTM against. Given
+a recent observation of $n$ points, the AnEn forecasts the next $m$ points.
+It involves looking at previous observations to find similar ones to the
+recent observation. A number of analogues $k$ is selected with a certain
+loss metric - we use mean squared error (MSE) loss to find the analogues
+that best fit the recent observation.
+
+\begin{equation}
+  \mathrm{MSE} = \frac{1}{n} \sum_{i=1}^{n} (Y_i = \hat{Y}_i)^2
+\end{equation}
+
+The time for a single prediction depends on the size of the dataset the
+AnEn can use for analogues.

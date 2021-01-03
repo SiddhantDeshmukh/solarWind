@@ -33,19 +33,7 @@ def array_to_list(array: np.ndarray):
   # Converts a NumPy array into a list of Python floats
   return list(array.astype(float))
 
-# =========================================================================
-# Data loading
-# =========================================================================
-# Predictions for cycle 21 - 24; use cycle 20 as extra info to find
-# analogues for earlier times
-START_TIME = datetime_from_cycle(solar_cycles, 20)  # start cycle 20
-FORECAST_START_TIME = datetime_from_cycle(solar_cycles, 21)  # start cycle 21
-END_TIME = datetime_from_cycle(solar_cycles, 24, key='end')  # end cycle 24
 
-data = dp.get_omni_rtn_data(START_TIME, END_TIME).to_dataframe()
-keys = ['BR', 'V']
-
-data = data[keys]
 output_predictions = []
 
 # =========================================================================
@@ -63,11 +51,19 @@ num_analogues = 10
 cycle_nums = [21, 22, 23, 24]
 for cycle in cycle_nums:
   print(f"Starting cycle {cycle} predictions...")
+  # Data loading
+  # Use the previous cycle to find analogues
+  search_cycle = cycle - 1
+  start_time = datetime_from_cycle(solar_cycles, search_cycle)
+  end_time = datetime_from_cycle(solar_cycles, cycle, key='end')
+  data = dp.get_omni_rtn_data(start_time, end_time).to_dataframe()
 
+  # Get the data for just the current cycle to make predictions on it
   cycle_start = datetime_from_cycle(solar_cycles, cycle)
-  cycle_end = datetime_from_cycle(solar_cycles, cycle, key='end')
-  cycle_data = dp.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
+  cycle_data = dp.get_omni_rtn_data(cycle_start, end_time).to_dataframe()
 
+  # Setup for analogue predictions
+  keys = ['BR', 'V']
   timestamps = list(cycle_data[keys[0]].keys())
   br_single_predictions = []
   vr_single_predictions = []
@@ -77,8 +73,8 @@ for cycle in cycle_nums:
   # Make a forecast for each timestamp in this solar cycle
   for i, timestamp in enumerate(timestamps):
     # Check bounds - ensure there ar enough points to make a prediction
-    if (timestamp < FORECAST_START_TIME + full_window_timedelta) or \
-       (timestamp > END_TIME - full_window_timedelta):
+    if (timestamp < start_time + full_window_timedelta) or \
+       (timestamp > end_time - full_window_timedelta):
       continue
     
     prediction_dict = {}
@@ -107,7 +103,7 @@ for cycle in cycle_nums:
       print(f"Cycle {cycle}: Done {i} of {len(timestamps)}.")
       print(f"Cycle start: {cycle_start}")
       print(f"Current timestamp: {timestamp}")
-      print(f"Cycle end: {cycle_end}")     
+      print(f"Cycle end: {end_time}")     
 
   # Save cycle data
   # JSON of every prediction

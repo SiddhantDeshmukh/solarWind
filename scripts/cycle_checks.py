@@ -31,33 +31,33 @@ def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
 cycle_df = pd.DataFrame()
 cycles = [21, 22, 23, 24]
 
+output_cols = ['Start', 'End', 'Total Points']
+
 for cycle in cycles:
   cycle_start = datetime_from_cycle(solar_cycles, cycle)
   cycle_end = datetime_from_cycle(solar_cycles, cycle, key='end')
   cycle_data = dp.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
 
   cycle_health = {
-    'cycle': cycle,
-    'start': str(cycle_start),
-    'end': str(cycle_end)
+    'Cycle': cycle,
+    'Start': str(cycle_start.date()),
+    'End': str(cycle_end.date())
   }
 
   keys = ['BR', 'V']
-  cycle_health['# total'] = len(cycle_data[keys[0]].to_numpy())
+  cycle_health['Total Points'] = len(cycle_data[keys[0]].to_numpy())
 
   for key in keys:
     array = cycle_data[key].to_numpy()
-    nan_vals_key = f'# NaN ({key})'
-    clean_vals_key = f'# clean ({key})'
+    nan_vals_key = f'% NaN ({key})'
+    cycle_health[nan_vals_key] = (np.count_nonzero(np.isnan(array)) / cycle_health['Total Points']) * 100
 
-    cycle_health[nan_vals_key] = np.count_nonzero(np.isnan(array))
-    cycle_health[clean_vals_key] = cycle_health['# total'] - cycle_health[nan_vals_key]
+    if not nan_vals_key in output_cols:
+      output_cols.append(nan_vals_key)
 
   cycle_df = cycle_df.append(cycle_health, ignore_index=True)
 
-cycle_df.set_index('cycle', inplace=True)
-print(cycle_df)
+cycle_df.set_index('Cycle', inplace=True)
 
 # Write to file
-cycle_df.to_latex('./cycle_checks.tex')
-
+cycle_df.to_latex('./cycle_checks.tex', columns=output_cols, float_format='%.2f')

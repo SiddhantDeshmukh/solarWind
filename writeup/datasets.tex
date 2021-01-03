@@ -1,0 +1,30 @@
+\section{Datasets}
+\label{sec:datasets}
+\subsection{Introduction}
+\label{subsec:datasets_intro}
+
+To accurately predict solar wind parameters, it is imperative to use
+datasets that contain precise measurements and a cadence high enough to
+capture both short and long-term trends. In this study, we make use of
+the OMNI COHO dataset with hourly cadence \citep{cdaweb_omnicoho1hr}.
+This dataset is formulated in the radial-tangential-normal (RTN)
+coordinate system, meaning spatial correlations which would otherwise
+would be present are eliminated, leaving only temporal correlations
+\citep{owens_riley_2017}. In this study, we focus on radial magnetic field
+strength (B$_r$) and radial wind velocity (v$_r$).
+
+\subsection{Solar cycles}
+\label{subsec:solar_cycles}
+
+In order to ensure our training, validation and testing datasets contain
+similar information for predictions to be accurate, we slice the data by
+solar cycle. Cycles 21 - 22 are used in the training dataset, cycle 23 is
+used for validation, and cycle 24 is used for testing. Table
+\ref{table:cycle_checks} shows the number of points in each cycle, the
+date ranges of these cycles, and how many NaN points are in each.
+
+\input{cycle_checks.tex}
+
+% Would be good to make a histogram here to see how points are distributed
+% in time: Are they random or are they in specific times in solar cycles?
+

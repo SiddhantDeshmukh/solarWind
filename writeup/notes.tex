@@ -1,0 +1,130 @@
+%%%%% Document Setup %%%%%%%%
+
+% \documentclass{aa}    % Font size (10,11 or 12pt) and column number (one or two).
+% \documentclass[12pt,a4paper,twoside,onecolumn, english]{aa}
+\documentclass  [
+  paper    = a4,
+  BCOR     = 10mm,
+  twoside,
+  fontsize = 12pt,
+  fleqn,
+  toc      = bibnumbered,
+  toc      = listofnumbered,
+  numbers  = noendperiod,
+  headings = normal,
+  listof   = leveldown,
+  version  = 3.03
+]                                       {scrreprt}
+\usepackage[utf8]{inputenc}
+\usepackage{times}                          % Times New Roman font type
+
+\usepackage{booktabs}
+\usepackage{savesym}
+\usepackage{amsmath}
+\savesymbol{iint}
+\usepackage{txfonts}
+\restoresymbol{TXF}{iint}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\usepackage[options]{hyperref}
+% To add links in your PDF file, use the package "hyperref"
+% with options according to your LaTeX or PDFLaTeX drivers.
+%
+
+\newcommand{\Si}[5]{\mbox{$#1\,^#2{\mathrm{#3}}^{{\mathrm{#4}}}_{\mathrm{#5}}$}}
+\newcommand{\Se}{$S_{\!\!\rmfamily e}$}
+\newcommand{\SH}{$S_{\!\!\rmfamily H}$}
+\newcommand{\SP}{$S_{\!\!\rmfamily P}$}
+\newcommand{\afe}{[$\alpha$/Fe]}
+\newcommand{\Teff}{T_{\rmfamily eff}}
+\newcommand{\kms}{km s$^{-1}$}
+\newcommand{\NX}[1]{N_{\rmfamily #1}}
+\newcommand{\eps}[1]{\log\varepsilon_{\rmfamily #1}}
+\newcommand{\gfe}{\log gf\varepsilon_\odot}
+\newcommand{\lge}{\log \varepsilon}
+\newcommand{\lgesi}{\log \varepsilon_{\text{Si}}}
+\newcommand{\lgesol}{\log \varepsilon_\odot}
+\newcommand{\block}{\rule{6mm}{2mm}}
+\newcommand{\cobold}{CO$^5$BOLD}
+\newcommand{\chir}{$\chi^2_\mathrm{r}$}
+\newcommand{\abufinal}{$7.582 \pm 0.016$}
+\newcommand{\ion}[2]{\text{#1} \rmfamily{#2}}
+\newcommand{\citep}[1]{(\cite{#1})}
+\newcommand{\citet}[1]{\cite{#1}}
+\newcommand{\url}[1]{\text{#1}}
+
+
+% Hans' auxiliary commands
+\newcommand{\ddx}{\ensuremath{\alpha\,|x|}}
+\newcommand{\ddxsq}{\ensuremath{\alpha^2\,|x|^2}}
+\newcommand{\beq}{\begin{equation}}
+\newcommand{\eeq}{\end{equation}}
+\newcommand{\x}{\ensuremath{x}}
+\newcommand{\xx}{\ensuremath{x^\prime}}
+\newcommand{\eref}[1]{\mbox{(\ref{#1})}}
+% \usepackage[a4paper, left=1.85cm, right=1.85cm,
+% top=1.85cm, bottom=1.85cm]{geometry}       % Defines paper size and margin length
+
+
+%labelfont=bf]{caption}                      % Defines caption font size as 9pt and caption title bolded
+
+%\usepackage{caption}
+
+%\usepackage{subcaption}
+%\captionsetup{compatibility=false}
+
+\usepackage{graphics,graphicx,epsfig,ulem}	% Makes sure all graphics works
+\graphicspath{{figs/}}
+
+\usepackage{etoolbox}                       % Customise date to preferred format
+\makeatletter
+\patchcmd{\frontmatter@RRAP@format}{(}{}{}{}
+\patchcmd{\frontmatter@RRAP@format}{)}{}{}{}
+% \renewcommand\Dated@name{}
+\makeatother
+
+% \usepackage{fancyhdr}
+\usepackage{gensymb}
+\usepackage{setspace}
+\usepackage{wrapfig}
+\usepackage{float}
+
+\usepackage{import}  % Make each subdirectory modular
+
+% \usepackage[compact]{titlesec}         % you need this package
+% \titlespacing{\section}{0pt}{2pt}{2pt} % this reduces space between (sub)sections to 0pt, for example
+
+% \pagestyle{fancy}                           % Insert header
+% \renewcommand{\headrulewidth}{0pt}
+% \lhead{Siddhant A. Deshmukh}                          % Your name
+% \rhead{Solar Silicon Abundance with CO$^5$BOLD}            % Your report title               
+
+% \def\bibsection{\section*{References}}        % Position reference section correctly
+
+\usepackage                             {color}
+\usepackage     [english]               {babel}
+\usepackage                             {natbib}
+\usepackage                             {hyperref}
+% links
+\definecolor{darkblue}{rgb}{0.0,0.0,0.4}
+\definecolor{darkgreen}{rgb}{0.0,0.4,0.0}
+\hypersetup{
+    colorlinks,
+    linkcolor=black,
+    citecolor=darkgreen,
+    urlcolor=darkblue
+}
+
+%%%%% Document %%%%%
+\begin{document}                     
+	
+  \input{datasets.tex}
+  \input{analogue_ensemble.tex}
+
+  % \chapter{Lists}
+  % \listoffigures
+  % \listoftables
+  % \bibliography{citations.bib}{}
+  % \citestyle{egu}
+  % \bibliographystyle{plainnat}
+
+\end{document}

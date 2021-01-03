@@ -89,8 +89,9 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
 
   # Check length, and if lengths don't match, return a failed state
   if len(observed_trend) != num_all_points:
-    print(f"Observed trend length {len(observed_trend)} does not match {num_all_points}")
-    return [np.array([np.nan] * num_all_points), observed_trend, pd.DataFrame(None)]
+    print(f"Observed trend length {len(observed_trend)} does not match {num_all_points}.")
+    print(f"Using first {num_all_points} points.")
+    observed_trend = observed_trend[:num_all_points]
 
   # Calculate error matrix *!based on key!*
   mse_matrix = mse_error_matrix(data_before_forecast, current_trend)
