@@ -1,6 +1,7 @@
 res/*.zip
 res/*.npy
-res/*
+res/br_timeseries.csv
+res/ssn/*
 writeup/*.aux
 writeup/*.fdb_latexmk
 writeup/*.log
