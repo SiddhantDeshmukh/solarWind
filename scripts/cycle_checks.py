@@ -35,12 +35,11 @@ def remove_nans(array: np.ndarray) -> np.ndarray:
 # =========================================================================
 # For each cycle, count the number of NaN values for each key, the length
 # of the cycle (number of hours), and start and end times -> tabulate all
+output_cols = ['Start', 'End', 'Total Points']
 cycle_df = pd.DataFrame()
 cycles = [21, 22, 23, 24]
 
-output_cols = ['Start', 'End', 'Total Points']
-
-for cycle in cycles:
+for i, cycle in enumerate(cycles):
   cycle_start = datetime_from_cycle(solar_cycles, cycle)
   cycle_end = datetime_from_cycle(solar_cycles, cycle, key='end')
   cycle_data = dp.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
@@ -93,11 +92,10 @@ for key, label in zip(keys, labels):
 
       data = remove_nans(cycle_data[key])
 
-      axes[i][j].hist(cycle_data[key])
+      axes[i][j].hist(cycle_data[key], bins=200)
       axes[i][j].set_xlabel(label)
       axes[i][j].set_ylabel("Frequency")
-      print(cycle_df.keys())
-      axes[i][j].set_title(f"Cycle {cycle}, {cycle_df[cycle][nan_vals_key]}% NaN")
+      axes[i][j].set_title(f"Cycle {cycle}, {cycle_df[nan_vals_key][cycle]:.2f}% NaN")
 
   plt.savefig(fig_file, bbox_inches="tight")
 
@@ -118,7 +116,7 @@ for i in range(nrows):
     br_data = remove_nans(cycle_data['BR'])
     vr_data = remove_nans(cycle_data['V'])
 
-    axes[i][j].hist2d(cycle_data['BR'], cycle_data['V'])
+    axes[i][j].hist2d(cycle_data['BR'], cycle_data['V'], bins=200)
     axes[i][j].set_xlabel(r"B$_r$ [nT]")
     axes[i][j].set_ylabel(r"v$_r$ [km s$^{-1}$]")
 
