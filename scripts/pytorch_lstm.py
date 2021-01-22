@@ -3,9 +3,41 @@
 # =========================================================================
 import torch
 import torch.nn as nn
+from torch.nn.parameter import Parameter
 import data_processing as dp
 from datetime import datetime
 import pandas as pd
+
+# %%
+# =========================================================================
+# Custom Cells
+# =========================================================================
+class LSTMCell(nn.Module):
+  def __init__(self, input_size, hidden_size):
+    super(LSTMCell, self).__init__()
+    self.input_size = input_size
+    self.hidden_size = hidden_size
+    self.weight_ih = Parameter(torch.randn(4 * hidden_size, input_size))
+    self.weight_hh = Parameter(torch.randn(4 * hidden_size, hidden_size))
+    self.bias_ih = Parameter(torch.randn(4 * hidden_size))
+    self.bias_hh = Parameter(torch.randn(4 * hidden_size))
+
+  def forward(self, input, state):
+    # type: (Tensor, Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
+    hx, cx = state
+    gates = (torch.mm(input, self.weight_ih.t()) + self.bias_ih +
+              torch.mm(hx, self.weight_hh.t()) + self.bias_hh)
+    ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+
+    ingate = torch.sigmoid(ingate)
+    forgetgate = torch.sigmoid(forgetgate)
+    cellgate = torch.tanh(cellgate)
+    outgate = torch.sigmoid(outgate)
+
+    cy = (forgetgate * cx) + (ingate * cellgate)
+    hy = outgate * torch.relu(cy)
+
+    return hy, cy
 
 # %%
 # Networks
@@ -15,6 +47,7 @@ class LSTMNet(nn.Module):
     super().__init__()
     self.hidden_layer_size = hidden_layer_size
     self.lstm = nn.LSTM(input_size, hidden_layer_size)
+    self.lstm1 = LSTMCell(input_size, hidden_layer_size)
     self.linear = nn.Linear(hidden_layer_size, output_size)
     
   def forward(self, x: torch.Tensor):
@@ -45,16 +78,15 @@ END_TIME = datetime_from_cycle(solar_cycles, 24, key='end')  # end cycle 24
 
 # Get data split into training, validation, testing in 24 hour sections
 # Change this to have cycle 21 and 22 for training, 23 for val, 24 for test
+print("Loading data...")
 data = dp.omni_preprocess(START_TIME, END_TIME, ['BR'],
     make_tensors=True, split_mini_batches=True)['BR']
-
-print(type(data), type(data['train_in']))
 
 # %%
 # Create model
 # =========================================================================
+print("Creating model")
 model = LSTMNet(1, 20, 1)
-print(model)
 
 # %%
 # Set up optimiser and loss
@@ -65,13 +97,10 @@ criterion = nn.MSELoss()
 optimiser = optim.RMSprop(model.parameters(), lr=0.001)
 metrics = []  # how to use mae loss as a metric?
 
-for key in data.keys():
-  if isinstance(data[key], torch.Tensor):
-    print(key, data[key].size())
-
 # %%
 # Train model
 # =========================================================================
+print("Training start")
 num_epochs = 2
 for epoch in range(num_epochs):
   running_loss = 0.0
@@ -85,14 +114,14 @@ for epoch in range(num_epochs):
     optimiser.zero_grad()
 
     # forward = backward + optimise (training)
-    outputs = model(train_in)
+    outputs = model(train_in).squeeze(-1)
     loss = criterion(outputs, train_out)
     loss.backward()
     optimiser.step()
 
     # forward + loss (validation)
     with torch.no_grad():
-      model_val_outputs = model(val_in)
+      model_val_outputs = model(val_in).squeeze(-1)
       val_loss += criterion(model_val_outputs, val_out).item()
 
     # update loss and print stats
