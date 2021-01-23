@@ -1,5 +1,7 @@
 import tensorflow.keras as keras
 from typing import List
+import torch
+import torch.nn as nn
 
 
 def simple_rnn():
@@ -65,12 +67,36 @@ def create_lstm_model(num_lstm_layers: int,
     else:
       model.add(layer(lstm_layer_neurons[i], input_shape=(None, 11), return_sequences=True))
 
-    # Add Dense layers
-    for i in range(num_dense_layers):
-      layer = keras.layers.Dense
-      if i + 1 == num_dense_layers:
-        model.add(layer(dense_layer_neurons[i], activation='linear'))
-      else:
-        model.add(layer(dense_layer_neurons[i], activation='relu'))
+  # Add Dense layers
+  for i in range(num_dense_layers):
+    layer = keras.layers.Dense
+    if i + 1 == num_dense_layers:
+      model.add(layer(dense_layer_neurons[i], activation='linear'))
+    else:
+      model.add(layer(dense_layer_neurons[i], activation='relu'))
   
   return model
+
+def pytorch_lstm_model(input_size: int,
+                      num_lstm_layers: int,
+                      lstm_layer_neurons: List[int],
+                      num_dense_layers: int,
+                      dense_layer_neurons: List[int]) -> nn.Sequential:
+  layers = []
+
+  # Add LSTM layers
+  for i in range(num_lstm_layers):
+    if i == 0:  # first layer
+      layers.append(nn.LSTMCell(input_size, lstm_layer_neurons[i]))
+
+    else:
+      layers.append(nn.LSTMCell(lstm_layer_neurons[i - 1], lstm_layer_neurons[i]))
+    
+  # Add Dense layers
+  for i in range(num_dense_layers):
+    if i + 1 == num_dense_layers:  # last layer
+      layers.append(nn.Linear(lstm_layer_neurons[-1], 1))
+    else:
+      layers.append(nn.ReLU())
+
+  return nn.Sequential(layers)

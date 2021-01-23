@@ -121,7 +121,7 @@ def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
 
       # Write a function to find the number of mini batches based on the
       # ideal mini batch size
-      arr_dict = split_data_mini_batches(arr_dict, 4000, input_batch_dim=batch_dim)
+      arr_dict = split_data_mini_batches(arr_dict, 2048, input_batch_dim=batch_dim)
 
     output_data[key] = arr_dict
 
@@ -145,6 +145,7 @@ def split_data_mini_batches(data: Dict, num_mini_batches: int,
         mini_batches = data[key]
     
       data[key] = mini_batches
+
   return data
 
 # =========================================================================

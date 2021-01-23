@@ -71,13 +71,13 @@ if __name__ == "__main__":
   # Define properties for forecast
   # Choose forecast time within start/end time randomly
   # Initialise inputs to AnEn
-  data_start_time = test_timestamp + pd.Timedelta(1, unit='hr')
-  forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
-  analogue_inputs = pd.Series(dp.add_timestamps_to_data(inputs_train.flatten()[::INPUT_LENGTH], initial_time_stamp))
+  # data_start_time = test_timestamp + pd.Timedelta(1, unit='hr')
+  # forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
+  # analogue_inputs = pd.Series(dp.add_timestamps_to_data(inputs_train.flatten()[::INPUT_LENGTH], initial_time_stamp))
 
-  training_window = 24 * (u.hr)  # 24 hours before 'forecast_time' 
-  forecast_window = 24 * (u.hr)  # 24 hours after 'forecast_time'
-  num_analogues = 10  # Number of analogues to find for ensemble
+  # training_window = 24 * (u.hr)  # 24 hours before 'forecast_time' 
+  # forecast_window = 24 * (u.hr)  # 24 hours after 'forecast_time'
+  # num_analogues = 10  # Number of analogues to find for ensemble
 
   # print("Creating dataset...")
 
@@ -89,35 +89,35 @@ if __name__ == "__main__":
   # # Save to file
   # analogue_inputs.to_csv('../res/br_timeseries.csv')
 
-  # Load BR data as series
-  analogue_inputs = pd.read_csv('../res/br_timeseries.csv')
+  # # Load BR data as series
+  # analogue_inputs = pd.read_csv('../res/br_timeseries.csv')
 
-  # Run the analogue ensemble for each point in the test set
-  print("Running analogue ensemble...")
-  analogue_predictions = pd.Series()
+  # # Run the analogue ensemble for each point in the test set
+  # print("Running analogue ensemble...")
+  # analogue_predictions = pd.Series()
 
-  # %%
-  for i in range(len(inputs_test)):
-    if i >= len(inputs_test) - 2:
-      analogue_prediction = inputs_test[i]
+  # # %%
+  # for i in range(len(inputs_test)):
+  #   if i >= len(inputs_test) - 2:
+  #     analogue_prediction = inputs_test[i]
       
-    else:
-      data_start_time = test_timestamp + pd.Timedelta(i, unit='hr')
-      forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
+  #   else:
+  #     data_start_time = test_timestamp + pd.Timedelta(i, unit='hr')
+  #     forecast_time = data_start_time + pd.Timedelta(24, unit='hr')
 
-      analogue_matrix, analogue_prediction, observed_trend = \
-        run_analogue_ensemble(analogue_inputs, forecast_time, training_window,
-        forecast_window, num_analogues)
+  #     analogue_matrix, analogue_prediction, observed_trend = \
+  #       run_analogue_ensemble(analogue_inputs, forecast_time, training_window,
+  #       forecast_window, num_analogues)
         
-      if (i % ((len(inputs_test) - 2) // 100)) == 0:
-        print(f"Done {i} of {len(inputs_test - 2)}")
+  #     if (i % ((len(inputs_test) - 2) // 100)) == 0:
+  #       print(f"Done {i} of {len(inputs_test - 2)}")
         
-    analogue_predictions = analogue_predictions.append(pd.Series(analogue_prediction))
+  #   analogue_predictions = analogue_predictions.append(pd.Series(analogue_prediction))
 
-  # analogue_predictions = np.array(analogue_predictions)
+  # # analogue_predictions = np.array(analogue_predictions)
 
-  # Save to file
-  analogue_predictions.to_csv('../out/analogue_br_prediction.csv')
+  # # Save to file
+  # analogue_predictions.to_csv('../out/analogue_br_prediction.csv')
 
   # analogue_predictions = pd.read_csv('../res/br_timeseries.csv')
 
@@ -127,16 +127,16 @@ if __name__ == "__main__":
   mse_naive_end, rmse_naive_end = mse(naive_end_test, outputs_test), rmse(naive_end_test, outputs_test)
   mse_mean, rmse_mean = mse(mean_test, outputs_test), rmse(mean_test, outputs_test)
   mse_median, rmse_median = mse(median_test, outputs_test), rmse(median_test, outputs_test)
-  mse_AnEn, rmse_AnEn = mse(analogue_predictions, outputs_test), rmse(analogue_predictions, outputs_test)
+  # mse_AnEn, rmse_AnEn = mse(analogue_predictions, outputs_test), rmse(analogue_predictions, outputs_test)
 
 
   def print_metrics(baseline: str, mse_value: float, rmse_value: float) -> None:
     print(f"{baseline}: MSE = {mse_value:.3f} \t RMSE = {rmse_value:.3f}")
 
   # Compare baseline metrics to test set evaluation
-  baselines = ["Naive start", "Naive end", "Mean", "Median", "Analogue Ensemble"]
-  mse_metrics = [mse_naive_start, mse_naive_end, mse_mean, mse_median, mse_AnEn]
-  rmse_metrics = [rmse_naive_start, rmse_naive_end, rmse_mean, rmse_median, rmse_AnEn]
+  baselines = ["Naive start", "Naive end", "Mean", "Median"]
+  mse_metrics = [mse_naive_start, mse_naive_end, mse_mean, mse_median]
+  rmse_metrics = [rmse_naive_start, rmse_naive_end, rmse_mean, rmse_median]
 
   for baseline, mse_metric, rmse_metric in zip(baselines, mse_metrics, rmse_metrics):
     print_metrics(baseline, mse_metric, rmse_metric)
