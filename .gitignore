@@ -10,4 +10,5 @@ writeup/*.out
 writeup/*.synctex.gz
 scripts/tools
 scripts/tutorials/pytorch/data/**
+scripts/tutorials/pytorch/mlruns/**
 out/an_en_outputs/*.json
