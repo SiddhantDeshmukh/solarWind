@@ -1,13 +1,21 @@
 # %%
+# =========================================================================
 # Imports
 # =========================================================================
+import data_processing as dp
+import pandas as pd
+import optuna
+import mlflow
+
 import torch
 import torch.nn as nn
-import data_processing as dp
+import torch.optim as optim
+
+from torch.optim.lr_scheduler import StepLR
 from datetime import datetime
-import pandas as pd
 
 # %%
+# =========================================================================
 # Networks
 # =========================================================================
 class LSTMNet(nn.Module):
@@ -67,6 +75,7 @@ solar_cycles_csv = '../res/solar_cycles.csv'
 solar_cycles = pd.read_csv(solar_cycles_csv, index_col=0)
 
 # %%
+# =========================================================================
 # Data preprocessing
 # =========================================================================
 START_TIME = datetime_from_cycle(solar_cycles, 21)  # start cycle 21
@@ -79,6 +88,7 @@ data = dp.omni_preprocess(START_TIME, END_TIME, ['BR'],
     make_tensors=True, split_mini_batches=True)['BR']
 
 # %%
+# =========================================================================
 # Create model
 # =========================================================================
 print("Creating model")
@@ -88,29 +98,145 @@ model = LSTMNet(1, 20, 1)
 print(model)
 
 # %%
+# =========================================================================
 # Set up optimiser and loss
 # =========================================================================
-import torch.optim as optim
-
 criterion = nn.MSELoss()
 optimiser = optim.RMSprop(model.parameters(), lr=1e-3)
 metrics = []  # how to use mae loss as a metric?
 
 # %%
+# =========================================================================
 # Training and validation functions
-# =========================================================================  
+# =========================================================================
+def train(model, device, train_in, train_out, optimizer, loss_function, epoch):
+  # Train 'model' on training data
+  assert len(train_in) == len(train_out), \
+    f"Error: Training input, output have size mismatch {len(train_in), len(train_out)}"
+
+  model.train()
+  num_batches = len(train_in)
+  train_loss = 0.0
+
+  for batch_idx, (data, target) in enumerate(zip(train_in, train_out)):
+    data, target = data.to(device), target.to(device)
+    optimizer.zero_grad()
+    output = model(data)
+    loss = loss_function(output, target)
+    train_loss += loss.item()
+
+    loss.backward()
+    optimizer.step()
+
+		# Print loss every 10 batches
+    if batch_idx % 10 == 0:
+      batch_size = len(data)
+      print(f"Train Epoch: {epoch}, batch {batch_idx} / {num_batches} "
+            f"\tLoss: {loss.item():.6f}")
+
+  avg_train_loss = train_loss / num_batches
+  return avg_train_loss
+
+
+def validate(model, device, val_in, val_out, loss_function):
+  assert len(val_in) == len(val_out), \
+    f"Error: Training input, output have size mismatch {len(val_in), len(val_out)}"
+
+  model.eval()
+  val_loss = 0.0
+
+  with torch.no_grad():
+    for data, target in zip(val_in, val_out):
+      data, target = data.to(device), target.to(device)
+      output = model(data)
+
+      # Sum of batch loss
+      val_loss += loss_function(output, target, reduction='sum').item()
+  
+  val_loss /= len(val_in)
+  print(f"Validation set: Average loss: {val_loss:.4f}")
+
+  return val_loss
+
+# %%
+# =========================================================================
+# Optuna parameter suggestions
+# =========================================================================
+optimisers = {
+  "RMSProp": optim.RMSprop
+}
+
+def suggest_hyperparameters(trial: optuna.Trial):
+  # learning rate on log scale
+  # dropout ratio in range [0.0, 0.9], step 0.1
+  # optimizer is categorical
+  lr = trial.suggest_float("lr", 1e-4, 1e-1, log=True)
+  dropout = trial.suggest_float("dropout", 0.0, 0.9, step=0.1)
+  optimiser_name = trial.suggest_categorical("optimiser_name", list(optimisers.keys()))
+
+  return lr, dropout, optimiser_name
+
+# =========================================================================
+# Optuna + MLFlow run (objective function)
+# =========================================================================
+def objective(trial: optuna.Trial):
+  best_val_loss = float('Inf')
+
+  # Start new MLFlow run
+  with mlflow.start_run():
+    # Hyparam suggestions from optuna; log with MLFlow
+    lr, dropout, optimiser_name = suggest_hyperparameters(trial)
+
+    # Shouldn't I apply the parameters to the trial first? Not sure if this
+    # is done automatically
+    mlflow.log_params(trial.params)
+
+    # Use CUDA if GPU available and log device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    mlflow.log_param("device", device)
+
+    # Initialise network
+    model = LSTMNet(dropout=dropout).to(device)
+
+    # Pick optimiser (from Optuna suggestions)
+    optimiser = optimisers[optimiser_name](model.parameters(), lr=lr)
+
+    # LR scheduler
+    scheduler = StepLR(optimiser, step_size=1, gamma=0.7)
+
+    # Load data
+
+    # Define loss
+    loss_function = nn.MSELoss
+
+    # Network training + validation
+    num_epochs = 30
+    for epoch in range(num_epochs):
+      avg_train_loss = train(model, device,
+                              data['train_in'], data['train_out'],
+                              optimiser, loss_function, epoch)
+      avg_val_loss = validate(model, device,
+                              data['val_in'], data['val_out'],
+                              loss_function)
+
+      if avg_val_loss <= best_val_loss:
+        best_val_loss = avg_val_loss
+
+      # Log avg train and val loss for current epoch
+      mlflow.log_metric('avg_train_losses', avg_train_loss, step=epoch)
+      mlflow.log_metric('avg_val_loss', avg_val_loss, step=epoch)
+
+      scheduler.step()
+
+  return best_val_loss
+
+
 print("Training start")
 num_epochs = 30
 for epoch in range(num_epochs):
   running_loss = 0.0
   val_loss = 0.0
   
-  # Train has 66 batches, val has 22 batches - redo loop!
-  print(len(data['train_in']))
-  print(len(data['train_out']))
-  print(len(data['val_in']))
-  print(len(data['val_out']))
- 
   # Loop over mini-batches
   for i, (train_in, val_in, train_out, val_out) in\
       enumerate(zip(data['train_in'], data['val_in'],
@@ -149,6 +275,3 @@ print("Finished training")
 MODEL_PATH = '../models/torch_lstm.pth'
 torch.save(model.state_dict(), MODEL_PATH)
 
-# %%
-# Validate model
-# =========================================================================
