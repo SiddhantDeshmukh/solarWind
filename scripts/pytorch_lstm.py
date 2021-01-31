@@ -33,34 +33,7 @@ class LSTMNet(nn.Module):
     return output.view(-1)
 
 
-class LSTM(nn.Module):
-  def __init__(self, input_dim, hidden_dim, batch_size, output_dim=1, num_layers=2):
-    super(LSTM, self).__init__()
-    self.input_dim = input_dim
-    self.hidden_dim = hidden_dim
-    self.batch_size = batch_size
-    self.num_layers = num_layers
-
-    # Define LSTM layer
-    self.lstm = nn.LSTM(self.input_dim, self.hidden_dim, self.num_layers)
-
-    # Define output layer
-    self.linear = nn.Linear(self.hidden_dim, output_dim)
-
-  def init_hidden(self):
-    # Initialise hidden state
-    return (torch.zeros(self.num_layers, self.batch_size, self.hidden_dim),
-            torch.zeros(self.num_layers, self.batch_size, self.hidden_dim))
-  
-  def forward(self, x):
-    # Forward pass through LSTM layer
-    # lstm_out: [input_size, batch_size, hidden_dim]
-    # self.hidden: (a, b) where both a, b, have shape [num_layers, batch_size, hidden_dim]
-    lstm_out, self.hidden = self.lstm(x.view(len(x), self.batch_size, -1))
-    y_pred = self.linear(lstm_out[-1].view(self.batch_size, -1))
-
-    return y_pred.view(-1)
-
+# =========================================================================
 # Datetime utility functions
 # =========================================================================
 def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
@@ -70,40 +43,6 @@ def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
   return datetime.strptime(solar_cycles.loc[cycle][key], fmt)
 
 
-# =========================================================================
-solar_cycles_csv = '../res/solar_cycles.csv'
-solar_cycles = pd.read_csv(solar_cycles_csv, index_col=0)
-
-# %%
-# =========================================================================
-# Data preprocessing
-# =========================================================================
-START_TIME = datetime_from_cycle(solar_cycles, 21)  # start cycle 21
-END_TIME = datetime_from_cycle(solar_cycles, 24, key='end')  # end cycle 24
-
-# Get data split into training, validation, testing in 24 hour sections
-# Change this to have cycle 21 and 22 for training, 23 for val, 24 for test
-print("Loading data...")
-data = dp.omni_preprocess(START_TIME, END_TIME, ['BR'],
-    make_tensors=True, split_mini_batches=True)['BR']
-
-# %%
-# =========================================================================
-# Create model
-# =========================================================================
-print("Creating model")
-model = LSTMNet(1, 20, 1)
-# model = LSTM(1, 20, 2048)
-
-print(model)
-
-# %%
-# =========================================================================
-# Set up optimiser and loss
-# =========================================================================
-criterion = nn.MSELoss()
-optimiser = optim.RMSprop(model.parameters(), lr=1e-3)
-metrics = []  # how to use mae loss as a metric?
 
 # %%
 # =========================================================================
@@ -115,6 +54,7 @@ def train(model, device, train_in, train_out, optimizer, loss_function, epoch):
     f"Error: Training input, output have size mismatch {len(train_in), len(train_out)}"
 
   model.train()
+  print(f"Training epoch {epoch}.")
   num_batches = len(train_in)
   train_loss = 0.0
 
@@ -130,7 +70,6 @@ def train(model, device, train_in, train_out, optimizer, loss_function, epoch):
 
 		# Print loss every 10 batches
     if batch_idx % 10 == 0:
-      batch_size = len(data)
       print(f"Train Epoch: {epoch}, batch {batch_idx} / {num_batches} "
             f"\tLoss: {loss.item():.6f}")
 
@@ -143,6 +82,7 @@ def validate(model, device, val_in, val_out, loss_function):
     f"Error: Training input, output have size mismatch {len(val_in), len(val_out)}"
 
   model.eval()
+  print("Validating.")
   val_loss = 0.0
 
   with torch.no_grad():
@@ -151,7 +91,7 @@ def validate(model, device, val_in, val_out, loss_function):
       output = model(data)
 
       # Sum of batch loss
-      val_loss += loss_function(output, target, reduction='sum').item()
+      val_loss += loss_function(output, target).item()
   
   val_loss /= len(val_in)
   print(f"Validation set: Average loss: {val_loss:.4f}")
@@ -171,10 +111,10 @@ def suggest_hyperparameters(trial: optuna.Trial):
   # dropout ratio in range [0.0, 0.9], step 0.1
   # optimizer is categorical
   lr = trial.suggest_float("lr", 1e-4, 1e-1, log=True)
-  dropout = trial.suggest_float("dropout", 0.0, 0.9, step=0.1)
+  # dropout = trial.suggest_float("dropout", 0.0, 0.9, step=0.1)
   optimiser_name = trial.suggest_categorical("optimiser_name", list(optimisers.keys()))
 
-  return lr, dropout, optimiser_name
+  return lr, optimiser_name
 
 # =========================================================================
 # Optuna + MLFlow run (objective function)
@@ -185,7 +125,7 @@ def objective(trial: optuna.Trial):
   # Start new MLFlow run
   with mlflow.start_run():
     # Hyparam suggestions from optuna; log with MLFlow
-    lr, dropout, optimiser_name = suggest_hyperparameters(trial)
+    lr, optimiser_name = suggest_hyperparameters(trial)
 
     # Shouldn't I apply the parameters to the trial first? Not sure if this
     # is done automatically
@@ -196,7 +136,7 @@ def objective(trial: optuna.Trial):
     mlflow.log_param("device", device)
 
     # Initialise network
-    model = LSTMNet(dropout=dropout).to(device)
+    model = LSTMNet().to(device)
 
     # Pick optimiser (from Optuna suggestions)
     optimiser = optimisers[optimiser_name](model.parameters(), lr=lr)
@@ -207,7 +147,7 @@ def objective(trial: optuna.Trial):
     # Load data
 
     # Define loss
-    loss_function = nn.MSELoss
+    loss_function = nn.MSELoss()
 
     # Network training + validation
     num_epochs = 30
@@ -231,47 +171,57 @@ def objective(trial: optuna.Trial):
   return best_val_loss
 
 
-print("Training start")
-num_epochs = 30
-for epoch in range(num_epochs):
-  running_loss = 0.0
-  val_loss = 0.0
+if __name__ == "__main__":
+  # %%
+  # =========================================================================
+  # Data preprocessing
+  # =========================================================================
+  solar_cycles_csv = '../res/solar_cycles.csv'
+  solar_cycles = pd.read_csv(solar_cycles_csv, index_col=0)
+
+  START_TIME = datetime_from_cycle(solar_cycles, 21)  # start cycle 21
+  END_TIME = datetime_from_cycle(solar_cycles, 24, key='end')  # end cycle 24
+
+  # Get data split into training, validation, testing in 24 hour sections
+  # Change this to have cycle 21 and 22 for training, 23 for val, 24 for test
+  print("Loading data...")
+  data = dp.omni_preprocess(START_TIME, END_TIME, ['BR'],
+      make_tensors=True, split_mini_batches=True)['BR']
+
+  # %%
+  # =========================================================================
+  # Create model
+  # =========================================================================
+  print("Creating model")
+  model = LSTMNet(24, 20, 24)
+  print(model)
+
+  # %%
+  # =========================================================================
+  # Set up optimiser and loss
+  # =========================================================================
+  print("Using MSELoss")
+  criterion = nn.MSELoss()
+  optimiser = optim.RMSprop(model.parameters(), lr=1e-3)
+  metrics = []  # how to use mae loss as a metric?
+
+  print("Optuna study:")
+  study = optuna.create_study(study_name='lstm-mlflow-optuna', direction='minimize')
+  study.optimize(objective, n_trials=5)
   
-  # Loop over mini-batches
-  for i, (train_in, val_in, train_out, val_out) in\
-      enumerate(zip(data['train_in'], data['val_in'],
-                    data['train_out'], data['val_out'])):
-    # Zero param gradients
-    optimiser.zero_grad()
+  # Print Optuna study statistics
+  print("\n++++++++++++++++++++++++++++++++++\n")
+  print("Study statistics: ")
+  print("  Number of finished trials: ", len(study.trials))
 
-    # print(train_in.size())
-    # print(train_out.size())
+  print("Best trial:")
+  trial = study.best_trial
 
-    # print(val_in.size())
-    # print(val_out.size())
+  print(f" Trial number: {trial.number}")
+  print(f" Loss (trial value): {trial.value}")
 
-    # forward = backward + optimise (training)
-    outputs = model(train_in)
-    loss = criterion(outputs, train_out)
-    loss.backward()
-    optimiser.step()
-
-    # forward + loss (validation)
-    with torch.no_grad():
-      model_val_outputs = model(val_in)
-      val_loss += criterion(model_val_outputs, val_out).item()
-
-    # update loss and print stats
-    running_loss += loss.item()
-
-    if i % 10 == 0:
-      print(f"[Epoch {epoch + 1}; {i + 1}] - ")
-      print(f"Loss (MSE): {running_loss:.3f}")
-      print(f"Val. Loss (MSE): {val_loss:3f}")
-
-print("Finished training")
-
-# Save model
-MODEL_PATH = '../models/torch_lstm.pth'
-torch.save(model.state_dict(), MODEL_PATH)
-
+  print(" Params:")
+  for key, value in trial.params.items():
+    print(f"{key}: {value}")
+ # Instead of minimising over the 'test loss', minimise over 'validation loss'
+ # Recommendation: Have lots of validation sets!

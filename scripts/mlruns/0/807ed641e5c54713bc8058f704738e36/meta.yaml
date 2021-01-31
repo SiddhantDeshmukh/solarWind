@@ -1,0 +1,15 @@
+artifact_uri: file:///mnt/d/sdeshmukh/Documents/solarWind/scripts/mlruns/0/807ed641e5c54713bc8058f704738e36/artifacts
+end_time: 1612096109624
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+name: ''
+run_id: 807ed641e5c54713bc8058f704738e36
+run_uuid: 807ed641e5c54713bc8058f704738e36
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1612096109119
+status: 4
+tags: []
+user_id: sdeshmukh
