@@ -8,7 +8,7 @@ from typing import Dict
 import numpy as np
 import heliopy.data.omni as omni
 from astropy.units import Quantity
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import torch
 import pandas as pd
@@ -29,7 +29,11 @@ def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
 # =========================================================================
 def get_omni_rtn_data(start_time: datetime, end_time: datetime):
   identifier = 'OMNI_COHO1HR_MERGED_MAG_PLASMA'  # COHO 1HR data
-  omni_data = omni._omni(start_time, end_time, identifier=identifier, intervals='yearly', warn_missing_units=False)
+
+  # Change 'start' and 'end' times to include an extra hour since the
+  # getter is exclusive of edges
+  omni_data = omni._omni(start_time - timedelta(hours=1), end_time + timedelta(hours=1),
+                         identifier=identifier, intervals='yearly', warn_missing_units=False)
 
   return omni_data
 
@@ -67,18 +71,14 @@ def split_into_n_hour_sections(data: np.ndarray, n=24):
 
   return model_inputs, model_outputs
 
-def get_cycle_idx(data_datetime: pd.Series, cycles_df: pd.DataFrame, cycle: int):
+def get_cycle_idx(data: pd.Series, cycles_df: pd.DataFrame, cycle: int):
   # Get start and end indices from 'cycles_df' by slicing the
   # DateTime-index Series 'data'
   cycle_start = datetime_from_cycle(cycles_df, cycle)
   cycle_end = datetime_from_cycle(cycles_df, cycle, key='end')
 
-  # Create a new Series without DateTime index
-  print(data_datetime)
-  data = pd.Series(np.array(data_datetime))
-  
-  idx_start = data.where(data_datetime == cycle_start)
-  idx_end = data.where(data_datetime == cycle_end)
+  idx_start = data.index.searchsorted(cycle_start)
+  idx_end = data.index.searchsorted(cycle_end)
 
   return idx_start, idx_end
 
@@ -93,6 +93,7 @@ def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
 
   for idx_range in idx_ranges:
     idx_start, idx_end = idx_range
+    # print(idx_start, idx_end, idx_range)
     sliced_input.extend(input_data[idx_start: idx_end])
     sliced_output.extend(output_data[idx_start: idx_end])
   
