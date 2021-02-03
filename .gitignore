@@ -12,4 +12,5 @@ scripts/tools
 scripts/tutorials/**
 scripts/tutorials/pytorch/data/**
 scripts/tutorials/pytorch/mlruns/**
+scripts/mlruns/**
 out/an_en_outputs/*.json
