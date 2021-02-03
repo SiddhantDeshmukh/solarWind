@@ -193,7 +193,7 @@ if __name__ == "__main__":
   # Create model
   # =========================================================================
   print("Creating model")
-  model = LSTMNet(24, 20, 24)
+  model = LSTMNet(24, 20, 1)
   print(model)
 
   # %%
