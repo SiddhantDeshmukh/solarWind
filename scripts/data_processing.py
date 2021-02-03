@@ -7,12 +7,21 @@
 from typing import Dict
 import numpy as np
 import heliopy.data.omni as omni
-import astropy.units as u
 from astropy.units import Quantity
 from datetime import datetime
 
 import torch
 import pandas as pd
+
+
+# =========================================================================
+# Datetime utility functions
+# =========================================================================
+def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
+                        key='start_min', fmt='%Y-%m-%d'):
+  # From the 'solar_cycles' DataFrame, get the 'key' datetime (formatted as
+  # %Y-%m-%d by default in the csv) as a datetime
+  return datetime.strptime(solar_cycles.loc[cycle][key], fmt)
 
 
 # =========================================================================
@@ -43,57 +52,115 @@ def remove_nans_from_data(data: np.ndarray,
 # =========================================================================
 # Data preprocessing (mainly splitting)
 # =========================================================================
-def split_into_24_hour_sections(data: np.ndarray):
-  model_inputs = np.array([data[i:i+24] for i in range(len(data) - 24)])[:, :, np.newaxis]
-  model_outputs = np.array(data[24:])
+def load_solar_cycles_df():
+  solar_cycles_csv = '../res/solar_cycles.csv'
+  solar_cycles_df = pd.read_csv(solar_cycles_csv, index_col=0)
+
+  return solar_cycles_df
+
+def split_into_n_hour_sections(data: np.ndarray, n=24):
+  model_inputs = np.array([data[i:i+n] for i in range(len(data) - n)])[:, :, np.newaxis]
+  model_outputs = np.array(data[n:])
 
   # Check for and remove NaNs
   model_inputs, model_outputs = remove_nans_from_data(data, model_inputs, model_outputs)
 
   return model_inputs, model_outputs
 
+def get_cycle_idx(data_datetime: pd.Series, cycles_df: pd.DataFrame, cycle: int):
+  # Get start and end indices from 'cycles_df' by slicing the
+  # DateTime-index Series 'data'
+  cycle_start = datetime_from_cycle(cycles_df, cycle)
+  cycle_end = datetime_from_cycle(cycles_df, cycle, key='end')
 
+  # Create a new Series without DateTime index
+  print(data_datetime)
+  data = pd.Series(np.array(data_datetime))
+  
+  idx_start = data.where(data_datetime == cycle_start)
+  idx_end = data.where(data_datetime == cycle_end)
+
+  return idx_start, idx_end
+
+
+def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
+                      idx_ranges=[(0, 1)]):
+  # Slice the data based on index ranges, then concatenate together
+  # e.g. idx ranges [(0, 2), (4, 5)] will slice '...data[0:2]' then
+  # '...data[4:5]' and concatenate these together to return
+  sliced_input = []
+  sliced_output = []
+
+  for idx_range in idx_ranges:
+    idx_start, idx_end = idx_range
+    sliced_input.extend(input_data[idx_start: idx_end])
+    sliced_output.extend(output_data[idx_start: idx_end])
+  
+  return np.array(sliced_input), np.array(sliced_output)
+
+
+# Deprecated
 def split_train_val_test(input_data: np.ndarray, output_data: np.ndarray,
-  start_timestamp=None):
+  start_timestamp=None, train_idx_ranges=[(0, 134929)],
+  val_idx_ranges=[(134929, 179456)], test_idx_ranges=[(179456, -1)]):
   # Split based on hard-coded indices present in OMNI data
   # Order is train -> validation -> test
-  train_idx_end = 134929
-  val_size = 44527
-  val_idx_end = train_idx_end + val_size
+  inputs_train, outputs_train = slice_data_ranges(input_data, output_data, train_idx_ranges)
+  inputs_val, outputs_val = slice_data_ranges(input_data, output_data, val_idx_ranges)
+  inputs_test, outputs_test = slice_data_ranges(input_data, output_data, test_idx_ranges)
 
-  inputs_train, outputs_train = input_data[:train_idx_end], output_data[:train_idx_end]
-  inputs_val, outputs_val = input_data[train_idx_end: val_idx_end], output_data[train_idx_end: val_idx_end]
-  inputs_test, outputs_test = input_data[val_idx_end:], output_data[val_idx_end:]
-
-
+  return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test
+  
+  # The following code is unused for the LSTM and is solely for the
+  # 'analogue_ensemble'
   # If 'start_timestamp' was given, calculate TimeStamps validation and
   # test start
-  if start_timestamp is not None:
-    # Assuming hourly cadence (OMNI data)
-    validation_timestamp = start_timestamp + time_window_to_time_delta(train_idx_end *u.hr)
-    test_timestamp = validation_timestamp + time_window_to_time_delta(val_size * u.hr)
-    end_timestamp = test_timestamp + time_window_to_time_delta(len(input_data[val_idx_end:]) * u.hr)
+  # if start_timestamp is not None:
+  #   # Assuming hourly cadence (OMNI data)
+  #   validation_timestamp = start_timestamp + time_window_to_time_delta(train_idx_end *u.hr)
+  #   test_timestamp = validation_timestamp + time_window_to_time_delta((val_idx_end - val_idx_start) * u.hr)
+  #   end_timestamp = test_timestamp + time_window_to_time_delta(len(input_data[val_idx_end:]) * u.hr)
 
-    return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test, validation_timestamp, test_timestamp, end_timestamp
+  #   return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test, validation_timestamp, test_timestamp, end_timestamp
   
-  else:
-    return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test
+  # else:
+  #   return inputs_train, inputs_val, inputs_test, outputs_train, outputs_val, outputs_test
 
 
 def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
-    make_tensors=False, split_mini_batches=False):
+    make_tensors=False, split_mini_batches=False, n_hours=24,
+    train_cycles=[21, 23], val_cycles=[22], test_cycles=[24]):
   # Wrapper function around 'get_omni_rtn_data()' and 'split...()'
+  # 'n_hours' is number of hours to split data into (default 24)
+  # By default, splits into cycles 21, 23 for training, 22 for validation
+  # and 24 for testing
+  # Note that 'start_time' and 'end_time' must span all cycles (this is
+  # not checked below), e.g. for the default case which includes cycles
+  # 21-24, the minimum time window is from the start of cycle 21 to the
+  # end of cycle 24
   data = get_omni_rtn_data(start_time, end_time).to_dataframe()
-  initial_timestamp = data.index[0]
   output_data = {}
+
+  # Load solar cycles DF
+  cycles_df = load_solar_cycles_df()
+  
+  # Determine index ranges for train, val and test data from cycles
+  train_idx_ranges = [get_cycle_idx(data[keys[0]], cycles_df, train_cycle) for train_cycle in train_cycles]
+  val_idx_ranges = [get_cycle_idx(data[keys[0]], cycles_df, val_cycle) for val_cycle in val_cycles]
+  test_idx_ranges = [get_cycle_idx(data[keys[0]], cycles_df, test_cycle) for test_cycle in test_cycles]
 
   for key in keys:
     array = np.array(data[key])
-    arr_input, arr_output = split_into_24_hour_sections(array)
-    train_in, val_in, test_in, train_out, val_out, test_out,\
-      val_timestamp, test_timestamp, end_timestamp =\
-        split_train_val_test(arr_input, arr_output,
-                             start_timestamp=initial_timestamp)
+    arr_input, arr_output = split_into_n_hour_sections(array, n_hours)
+    # train_in, val_in, test_in, train_out, val_out, test_out,\
+    #   val_timestamp, test_timestamp, end_timestamp =\
+    #     split_train_val_test(arr_input, arr_output,
+    #                          start_timestamp=initial_timestamp)
+
+    # Slice train, val, test
+    train_in, train_out = slice_data_ranges(arr_input, arr_output, train_idx_ranges)
+    val_in, val_out = slice_data_ranges(arr_input, arr_output, val_idx_ranges)
+    test_in, test_out = slice_data_ranges(arr_input, arr_output, test_idx_ranges)
 
     arr_dict = {
       "train_in": train_in, 
@@ -102,9 +169,9 @@ def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
       "train_out": train_out,
       "val_out": val_out,
       "test_out": test_out,
-      "val_timestamp": val_timestamp,
-      "test_timestamp": test_timestamp,
-      "end_timestamp": end_timestamp
+      # "val_timestamp": val_timestamp,
+      # "test_timestamp": test_timestamp,
+      # "end_timestamp": end_timestamp
     }
 
     if make_tensors:  # NumPy ndarray -> PyTorch Tensor
