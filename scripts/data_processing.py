@@ -4,19 +4,37 @@
 # =========================================================================
 # Imports
 # =========================================================================
-from typing import Dict
+from typing import Dict, List, Tuple
 import numpy as np
 import heliopy.data.omni as omni
 from astropy.units import Quantity
 from datetime import datetime, timedelta
 
 import torch
+from torch.functional import Tensor
+from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 
 
 # =========================================================================
+# Normalisation
+# =========================================================================
+def normalise_tensor(tensor: Tensor, limits: Tuple):
+  # Applies min-max normalisation
+  # Takes a PyTorch Tensor and a tuple of (left_limit, right_limit)
+  # to linearly normalise the data
+  tensor_min, tensor_max = torch.min(tensor), torch.max(tensor)
+  lower_lim, upper_lim = limits
+  scaled_tensor = lower_lim + \
+      ((tensor - tensor_min) * (upper_lim - lower_lim)) / \
+      (tensor_max - tensor_min)
+
+  return scaled_tensor
+# =========================================================================
 # Timestamping
 # =========================================================================
+
+
 def add_timestamps_to_data(data: np.ndarray, start_timestamp: pd.Timestamp):
   # 'data' is a 1D array of values. Adds timestamps incrementing upwards
   # by 1 hour per value
@@ -26,24 +44,44 @@ def add_timestamps_to_data(data: np.ndarray, start_timestamp: pd.Timestamp):
     timestamped_data[timestamp] = data[i]
 
   return timestamped_data
-  
+
 # =========================================================================
 # Time conversion utility functions
 # =========================================================================
+
+
 def time_window_to_time_delta(time_window: Quantity) -> pd.Timedelta:
   value, unit = time_window.value, str(time_window.unit)
 
   # More generally, translate Astropy's units into Pandas'
   if unit == 'h':
     unit = 'hr'
-    
+
   time_delta = pd.Timedelta(value, unit=unit)
-  
+
   return time_delta
 
 # =========================================================================
+# Quantity calculations
+# =========================================================================
+
+
+def calculate_geoeffectiveness(wind_density: np.ndarray,
+                               hmf_intensity: np.ndarray,
+                               wind_speed: np.ndarray,
+                               hmf_clock_angle: np.ndarray) -> np.ndarray:
+  alpha = 0.5  # empirically determined
+  geoffectiveness = wind_density**(2/3 - alpha) * \
+      hmf_intensity**(2*alpha) * \
+      wind_speed**(7/3 - 2 * alpha) * \
+      np.sin(hmf_clock_angle / 2)**4
+
+  return geoffectiveness
+# =========================================================================
 # Datetime utility functions
 # =========================================================================
+
+
 def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
                         key='start_min', fmt='%Y-%m-%d'):
   # From the 'solar_cycles' DataFrame, get the 'key' datetime (formatted as
@@ -65,6 +103,7 @@ def get_omni_rtn_data(start_time: datetime, end_time: datetime):
 
   return omni_data
 
+
 def load_solar_cycles_df():
   solar_cycles_csv = '../res/solar_cycles.csv'
   solar_cycles_df = pd.read_csv(solar_cycles_csv, index_col=0)
@@ -74,33 +113,44 @@ def load_solar_cycles_df():
 # =========================================================================
 # Data cleaning
 # =========================================================================
-def remove_nans_from_data(data: np.ndarray, 
-    model_inputs: np.ndarray, model_outputs: np.ndarray, n=24):
+
+
+def remove_nans_from_data(data: np.ndarray,
+                          model_inputs: np.ndarray, model_outputs: np.ndarray, n=24):
   # 'n' corresponds to length of slice (default 24, same as in
   # 'split_into_n_hour_sections()')
   idx_edge = n + 1  # want to check 'n' elements forward
-  nan_check = np.array([data[i:i + idx_edge] for i in range(len(data) - idx_edge + 1)])
-  model_inputs = model_inputs[np.where([~np.any(np.isnan(i)) for i in nan_check])]
-  model_outputs = model_outputs[np.where([~np.any(np.isnan(i)) for i in nan_check])]
+  nan_check = np.array([data[i:i + idx_edge]
+                        for i in range(len(data) - idx_edge + 1)])
+  model_inputs = model_inputs[np.where(
+      [~np.any(np.isnan(i)) for i in nan_check])]
+  model_outputs = model_outputs[np.where(
+      [~np.any(np.isnan(i)) for i in nan_check])]
 
   print(f"Input shape: {model_inputs.shape}")
   print(f"Output shape: {model_outputs.shape}")
 
-  print(f"Any NanNs? {np.any(np.isnan(model_inputs)) or np.any(np.isnan(model_outputs))}")
+  print(
+      f"Any NanNs? {np.any(np.isnan(model_inputs)) or np.any(np.isnan(model_outputs))}")
 
   return model_inputs, model_outputs
 
 # =========================================================================
 # Data splitting
 # =========================================================================
+
+
 def split_into_n_hour_sections(data: np.ndarray, n=24):
-  model_inputs = np.array([data[i:i+n] for i in range(len(data) - n)])[:, :, np.newaxis]
+  model_inputs = np.array([data[i:i+n]
+                           for i in range(len(data) - n)])[:, :, np.newaxis]
   model_outputs = np.array(data[n:])
 
   # Check for and remove NaNs
-  model_inputs, model_outputs = remove_nans_from_data(data, model_inputs, model_outputs)
+  model_inputs, model_outputs = remove_nans_from_data(
+      data, model_inputs, model_outputs)
 
   return model_inputs, model_outputs
+
 
 def get_cycle_idx(data: pd.Series, cycles_df: pd.DataFrame, cycle: int):
   # Get start and end indices from 'cycles_df' by slicing the
@@ -127,13 +177,21 @@ def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
     # print(idx_start, idx_end, idx_range)
     sliced_input.extend(input_data[idx_start: idx_end])
     sliced_output.extend(output_data[idx_start: idx_end])
-  
+
   return np.array(sliced_input), np.array(sliced_output)
 
 
-def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
-    make_tensors=False, split_mini_batches=False, n_hours=24,
-    train_cycles=[21, 23], val_cycles=[22], test_cycles=[24]):
+def omni_preprocess(start_time: datetime, end_time: datetime,
+                    keys=["BR"], get_geoeffectiveness=False,
+                    make_tensors=False, split_mini_batches=False,
+                    mini_batch_size=32,
+                    normalise_tensors=False, normalisation_limits=[(0, 1)],
+                    n_hours=24,
+                    train_cycles=[21, 23], val_cycles=[22], test_cycles=[24]):
+  # 'normalisation_limits' is list of tuples corresponding to lower and
+  # upper min-max normaliastion limits for each key. Needs 1 Tuple (or None
+  # to ignore normalisation) per key!
+
   # Wrapper function around 'get_omni_rtn_data()' and 'split...()'
   # Splits data into training, validation and testing datasets depending
   # on solar cycles chosen
@@ -149,85 +207,124 @@ def omni_preprocess(start_time: datetime, end_time: datetime, keys=["BR"],
 
   # Load solar cycles DF
   cycles_df = load_solar_cycles_df()
-  
-  # Determine index ranges for train, val and test data from cycles
-  train_idx_ranges = [get_cycle_idx(data[keys[0]], cycles_df, train_cycle) for train_cycle in train_cycles]
-  val_idx_ranges = [get_cycle_idx(data[keys[0]], cycles_df, val_cycle) for val_cycle in val_cycles]
-  test_idx_ranges = [get_cycle_idx(data[keys[0]], cycles_df, test_cycle) for test_cycle in test_cycles]
 
-  for key in keys:
+  # Determine index ranges for train, val and test data from cycles
+  train_idx_ranges = [get_cycle_idx(
+      data[keys[0]], cycles_df, train_cycle) for train_cycle in train_cycles]
+  val_idx_ranges = [get_cycle_idx(
+      data[keys[0]], cycles_df, val_cycle) for val_cycle in val_cycles]
+  test_idx_ranges = [get_cycle_idx(
+      data[keys[0]], cycles_df, test_cycle) for test_cycle in test_cycles]
+
+  # Overwrite keys and get inclination angle, calculate geoeffectiveness
+  if get_geoeffectiveness:
+    # clock angle
+    print("Calculating HMF clock angle...")
+    data['HMF_INC'] = np.arctan2(-data['BT'].values, data['BN'].values)
+    # geoeffectiveness
+    print("Calculating geoeffectiveness...")
+    data['G'] = calculate_geoeffectiveness(
+        data['N'].values, data['ABS_B'].values,
+        data['V'].values, data['HMF_INC'].values)
+
+    keys = ["N", "ABS_B", "V", "HMF_INC", "G"]
+
+  for i, key in enumerate(keys):
+    print(f"Loading {key}...")
     array = np.array(data[key])
     arr_input, arr_output = split_into_n_hour_sections(array, n_hours)
 
     # Slice train, val, test
-    train_in, train_out = slice_data_ranges(arr_input, arr_output, train_idx_ranges)
-    val_in, val_out = slice_data_ranges(arr_input, arr_output, val_idx_ranges)
-    test_in, test_out = slice_data_ranges(arr_input, arr_output, test_idx_ranges)
+    train_in, train_out = slice_data_ranges(
+        arr_input, arr_output, train_idx_ranges)
+    val_in, val_out = slice_data_ranges(
+        arr_input, arr_output, val_idx_ranges)
+    test_in, test_out = slice_data_ranges(
+        arr_input, arr_output, test_idx_ranges)
 
     arr_dict = {
-      "train_in": train_in, 
-      "val_in": val_in,
-      "test_in": test_in,
-      "train_out": train_out,
-      "val_out": val_out,
-      "test_out": test_out,
+        "train_in": train_in,
+        "val_in": val_in,
+        "test_in": test_in,
+        "train_out": train_out,
+        "val_out": val_out,
+        "test_out": test_out,
     }
 
     if make_tensors:  # NumPy ndarray -> PyTorch Tensor
-      # For LSTM, Torch expects [seq_len, batch_size, num_feat]
+     # For LSTM, Torch expects [batch_size, seq_len, num_feat]
+     # Same as TensorFlow! Make sure to flag 'batch_first=True' in LSTM()
+      print("Creating tensors (for PyTorch!)")
       for arr_key in arr_dict.keys():
         if isinstance(arr_dict[arr_key], np.ndarray):
           tensor = torch.from_numpy(arr_dict[arr_key])
-          if len(arr_dict[arr_key].shape) == 3:
-            tensor = tensor.transpose(0, 1)
+
+          if normalise_tensors:
+            print("Normalising tensors...")
+            if normalisation_limits[i] is None:
+              print(f"'{key}' will not be normalised.")
+            else:
+              tensor = normalise_tensor(tensor, normalisation_limits[i])
+
           arr_dict[arr_key] = tensor
 
     if split_mini_batches:
-      batch_dim = 1 if make_tensors else 0
+      print("Splitting into mini-batches")
+      batch_dim = 0  # first index is always 'batch_size'
 
       # Write a function to find the number of mini batches based on the
       # ideal mini batch size
-      arr_dict = split_data_mini_batches(arr_dict, 2048, input_batch_dim=batch_dim)
+      arr_dict = split_data_mini_batches(
+          arr_dict, mini_batch_size, input_batch_dim=batch_dim)
 
     output_data[key] = arr_dict
 
   return output_data
 
 
-def split_data_mini_batches(data: Dict, num_mini_batches: int,
-  input_batch_dim=0, output_batch_dim=0):
+def split_data_mini_batches(data: Dict, mini_batch_size: int,
+                            input_size=3, output_size=1,
+                            input_batch_dim=0, output_batch_dim=0):
   # For each 3D Tensor, split into mini-batches
   for key in data.keys():
     if isinstance(data[key], torch.Tensor):
-      if len(data[key].shape) == 3:  # input data
-        mini_batches = torch.split(data[key], num_mini_batches, dim=input_batch_dim)
-      
-      elif len(data[key].shape) == 1:  # output data
-        mini_batches = torch.split(data[key], num_mini_batches, output_batch_dim)
-      
+      if len(data[key].shape) == input_size:  # input data
+        mini_batches = torch.split(
+            data[key], mini_batch_size, dim=input_batch_dim)
+
+      elif len(data[key].shape) == output_size:  # output data
+        mini_batches = torch.split(
+            data[key], mini_batch_size, output_batch_dim)
+
       else:
-        print(f"Warning: shape of '{key}' is not size 3 (input) or 2 (output).")
+        print(
+            f"Warning: shape of '{key}' is not size 3 (input) or 1 (output).")
         print("Ignoring mini-batches.")
         mini_batches = data[key]
-    
+
+      # Pad last mini_batch
+      mini_batches = pad_sequence(mini_batches).transpose(0, 1)
       data[key] = mini_batches
 
   return data
 
+
 # =========================================================================
 # Analogue ensemble conversion (from LSTM)
 # =========================================================================
+
+
 def lstm_3d_to_analogue_input(lstm_data: np.ndarray,
-    start_timestamp: pd.Timestamp) -> list:
+                              start_timestamp: pd.Timestamp) -> list:
   # 'lstm_data' is a 3D array with dimensions (batch_size, time_step, 1)
   # (1 is for 'univariate')
   # Create a dict of length 'batch_size' containing key-value pairs of
   # 'timestamp': 'value' by flattening data and adding timestamps
   analogue_input_data = {}
-  
+
   # First element of each sequence to uniquely flatten data into single
   # sequence
-  flat_data = lstm_data[:, 0, 0]  
+  flat_data = lstm_data[:, 0, 0]
 
   timestamps = []
   timestamp = start_timestamp
@@ -238,22 +335,23 @@ def lstm_3d_to_analogue_input(lstm_data: np.ndarray,
 
     timestamps.append(timestamp)
 
-  analogue_input_data = {timestamp: value for (timestamp, value) in zip(timestamps, flat_data)}
-  assert len(list(analogue_input_data.keys())) == len(flat_data) 
-  
+  analogue_input_data = {timestamp: value for (
+      timestamp, value) in zip(timestamps, flat_data)}
+  assert len(list(analogue_input_data.keys())) == len(flat_data)
+
   return analogue_input_data
 
 
 def lstm_2d_to_analogue_input(lstm_data: np.ndarray,
-    start_timestamp: pd.Timestamp) -> list:
+                              start_timestamp: pd.Timestamp) -> list:
   # 'lstm_data' is a 2D array with dimensions (time_step, 1), i.e.,
   # 'batch_size' has already been sliced and this is a single batch
   # (1 is for 'univariate')
   # Create a dict of length 'batch_size' containing key-value pairs of
   # 'timestamp': 'value' by flattening data and adding timestamps
   analogue_input_data = {}
-  
-  flat_data = lstm_data[:, 0]  
+
+  flat_data = lstm_data[:, 0]
 
   timestamps = []
   timestamp = start_timestamp
@@ -264,7 +362,8 @@ def lstm_2d_to_analogue_input(lstm_data: np.ndarray,
 
     timestamps.append(timestamp)
 
-  analogue_input_data = {timestamp: value for (timestamp, value) in zip(timestamps, flat_data)}
-  assert len(list(analogue_input_data.keys())) == len(flat_data) 
-  
+  analogue_input_data = {timestamp: value for (
+      timestamp, value) in zip(timestamps, flat_data)}
+  assert len(list(analogue_input_data.keys())) == len(flat_data)
+
   return analogue_input_data
