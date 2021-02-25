@@ -1,6 +1,8 @@
 # %%
 # Quick test to see what data are availble in OMNI and to
 # compute geoeffectiveness
+from torch.utils.data.dataloader import DataLoader
+from torch.utils.data import TensorDataset
 import torch.optim as optim
 import torch.nn as nn
 import data_processing as dp
@@ -26,42 +28,75 @@ def calculate_geoeffectiveness(wind_density: np.ndarray,
 START_TIME = datetime(1995, 1, 1)
 END_TIME = datetime(2020, 12, 31)
 
+# %%
 data = dp.omni_preprocess(START_TIME, END_TIME, get_geoeffectiveness=True,
                           make_tensors=True, split_mini_batches=False)
 
+# %%
 # density, wind speed, HMF intensity, HMF clock angle, geoeffectiveness
 train_keys = ["N", "V", "ABS_B", "HMF_INC"]
+keys = list(data[train_keys[0]].keys())  # 'train_in', 'train_out', ...
 predict_keys = ["G"]
 
 # Want to predict N, V, ABS_B, HMF_INC, for testing, turn into
 # geoeffectiveness and compare to actual values
-train_in = torch.cat(([data[key]["train_in"] for key in train_keys]), 2)
-train_out = torch.cat(
-    ([data[key]["train_out"].unsqueeze(1) for key in train_keys]), 1)
-val_in = torch.cat(([data[key]["val_in"] for key in train_keys]), 2)
-val_out = torch.cat(([data[key]["val_out"].unsqueeze(1)
-                      for key in train_keys]), 1)
+combined_data = {}
 
-print(f"Train in size: {train_in.size()}")
-print(f"Train out size: {train_out.size()}")
-print(f"Val in size: {val_in.size()}")
-print(f"Val out size: {val_out.size()}")
+# In 'test' set, 'N' has ~4000 less elements
+for key in keys:
+  # Cat on 'num_features' axis
+  axis = 2 if key.endswith("in") else 1
+  print(key, axis, data["N"][key].size())
+  combined_data[key] = torch.cat(
+      ([data[feat_key][key] for feat_key in train_keys]), dim=axis)
+  print(key)
 
-# Split into mini-batches
-data = {
-    "train_in": train_in,
-    "train_out": train_out,
-    "val_in": val_in,
-    "val_out": val_out,
-}
+for key in combined_data.keys():
+  print(f"{key} size: {combined_data[key].size()}")
 
-data = dp.split_data_mini_batches(
-    data, 32, input_batch_dim=0, output_batch_dim=0,
-    input_size=3, output_size=2)
+# train_in = torch.cat(([data[key]["train_in"] for key in train_keys]), 2)
+# train_out = torch.cat(
+#     ([data[key]["train_out"].unsqueeze(1) for key in train_keys]), 1)
+# val_in = torch.cat(([data[key]["val_in"] for key in train_keys]), 2)
+# val_out = torch.cat(([data[key]["val_out"].unsqueeze(1)
+#                       for key in train_keys]), 1)
+
+# print(f"Train in size: {train_in.size()}")
+# print(f"Train out size: {train_out.size()}")
+# print(f"Val in size: {val_in.size()}")
+# print(f"Val out size: {val_out.size()}")
+
+# # Split into mini-batches
+# data = {
+#     "train_in": train_in,
+#     "train_out": train_out,
+#     "val_in": val_in,
+#     "val_out": val_out,
+# }
+
+
+# data = dp.split_data_mini_batches(
+#     data, 32, input_batch_dim=0, output_batch_dim=0,
+#     input_size=3, output_size=2)
 
 # Just BR for testing!
 # data = dp.omni_preprocess(
 #     START_TIME, END_TIME, make_tensors=True, split_mini_batches=True)['BR']
+
+# %%
+# Create a custom TensorDataset and DataLoader
+keys = ["N", "V", "ABS_B"]
+data = dp.get_omni_rtn_data(START_TIME, END_TIME).to_dataframe()
+print(f"{data.keys()}, {len(data)}")
+
+# %%
+dataset = TensorDataset(
+    *[torch.from_numpy(data[key].values) for key in keys])
+loader = DataLoader(dataset, batch_size=10000)
+
+for batch_idx, (n, v, absb) in enumerate(loader):
+  print(batch_idx, n.size(), v.size(), absb.size())
+  print(torch.cat((n, v, absb), 1).size())
 
 # %%
 

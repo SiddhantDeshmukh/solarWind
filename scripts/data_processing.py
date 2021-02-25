@@ -242,13 +242,14 @@ def omni_preprocess(start_time: datetime, end_time: datetime,
     test_in, test_out = slice_data_ranges(
         arr_input, arr_output, test_idx_ranges)
 
+    # Reshape output arrays to 2D to easily stack multiple keys
     arr_dict = {
         "train_in": train_in,
         "val_in": val_in,
         "test_in": test_in,
-        "train_out": train_out,
-        "val_out": val_out,
-        "test_out": test_out,
+        "train_out": train_out.reshape(train_out.shape[0], -1),
+        "val_out": val_out.reshape(val_out.shape[0], -1),
+        "test_out": test_out.reshape(test_out.shape[0], -1),
     }
 
     if make_tensors:  # NumPy ndarray -> PyTorch Tensor
