@@ -12,13 +12,39 @@ from datetime import datetime, timedelta
 
 import torch
 from torch.functional import Tensor
+from torch.utils.data.dataloader import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
+from torch.utils.data.dataset import Dataset
 
+
+# =========================================================================
+# Classes
+# =========================================================================
+class OMNIDataset(Dataset):
+  def __init__(self,
+               start_time: datetime,
+               end_time: datetime,
+               keys: List) -> Dataset:
+    # Get OMNI data between 'start_time' - 'end_time' and create a Dataset
+    omni_data = get_omni_rtn_data(start_time, end_time).to_dataframe()
+
+    # output tensor is 2D - time-series in '0', features in '1'
+    output_tensor = torch.from_numpy(
+        omni_data[keys[0].values]).unsqueeze(1)
+    if len(keys) > 1:
+      for i in range(1, len(keys)):
+        key_tensor = torch.from_numpy(
+            omni_data[keys[i].values]).unsqueeze(1)
+        output_tensor = torch.cat((output_tensor, key_tensor), 1)
+
+    self.data = output_tensor
 
 # =========================================================================
 # Normalisation
 # =========================================================================
+
+
 def normalise_tensor(tensor: Tensor, limits: Tuple):
   # Applies min-max normalisation
   # Takes a PyTorch Tensor and a tuple of (left_limit, right_limit)
@@ -140,14 +166,15 @@ def remove_nans_from_data(data: np.ndarray,
 # =========================================================================
 
 
-def split_into_n_hour_sections(data: np.ndarray, n=24):
+def split_into_n_hour_sections(data: np.ndarray, n=24, remove_nans=True):
   model_inputs = np.array([data[i:i+n]
                            for i in range(len(data) - n)])[:, :, np.newaxis]
-  model_outputs = np.array(data[n:])
+  model_outputs = np.array(data[n:])[:, np.newaxis]
 
   # Check for and remove NaNs
-  model_inputs, model_outputs = remove_nans_from_data(
-      data, model_inputs, model_outputs)
+  if remove_nans:
+    model_inputs, model_outputs = remove_nans_from_data(
+        data, model_inputs, model_outputs)
 
   return model_inputs, model_outputs
 
@@ -181,13 +208,13 @@ def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
   return np.array(sliced_input), np.array(sliced_output)
 
 
-def omni_preprocess(start_time: datetime, end_time: datetime,
-                    keys=["BR"], get_geoeffectiveness=False,
-                    make_tensors=False, split_mini_batches=False,
-                    mini_batch_size=32,
-                    normalise_tensors=False, normalisation_limits=[(0, 1)],
-                    n_hours=24,
-                    train_cycles=[21, 23], val_cycles=[22], test_cycles=[24]):
+def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
+                          keys=["BR"], get_geoeffectiveness=False,
+                          make_tensors=False, split_mini_batches=False,
+                          mini_batch_size=32,
+                          normalise_tensors=False, normalisation_limits=[(0, 1)],
+                          n_hours=24, remove_nans=True,
+                          train_cycles=[21, 23], val_cycles=[22], test_cycles=[24]):
   # 'normalisation_limits' is list of tuples corresponding to lower and
   # upper min-max normaliastion limits for each key. Needs 1 Tuple (or None
   # to ignore normalisation) per key!
@@ -204,6 +231,8 @@ def omni_preprocess(start_time: datetime, end_time: datetime,
   # end of cycle 24
   data = get_omni_rtn_data(start_time, end_time).to_dataframe()
   output_data = {}
+
+  # Check if we should split by solar cycle; else do not split data!
 
   # Load solar cycles DF
   cycles_df = load_solar_cycles_df()
@@ -232,7 +261,8 @@ def omni_preprocess(start_time: datetime, end_time: datetime,
   for i, key in enumerate(keys):
     print(f"Loading {key}...")
     array = np.array(data[key])
-    arr_input, arr_output = split_into_n_hour_sections(array, n_hours)
+    arr_input, arr_output = split_into_n_hour_sections(
+        array, n_hours, remove_nans=remove_nans)
 
     # Slice train, val, test
     train_in, train_out = slice_data_ranges(
@@ -242,14 +272,13 @@ def omni_preprocess(start_time: datetime, end_time: datetime,
     test_in, test_out = slice_data_ranges(
         arr_input, arr_output, test_idx_ranges)
 
-    # Reshape output arrays to 2D to easily stack multiple keys
     arr_dict = {
         "train_in": train_in,
         "val_in": val_in,
         "test_in": test_in,
-        "train_out": train_out.reshape(train_out.shape[0], -1),
-        "val_out": val_out.reshape(val_out.shape[0], -1),
-        "test_out": test_out.reshape(test_out.shape[0], -1),
+        "train_out": train_out,
+        "val_out": val_out,
+        "test_out": test_out
     }
 
     if make_tensors:  # NumPy ndarray -> PyTorch Tensor

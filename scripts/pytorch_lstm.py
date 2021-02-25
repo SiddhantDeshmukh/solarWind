@@ -193,8 +193,8 @@ if __name__ == "__main__":
   # Get data split into training, validation, testing in 24 hour sections
   # Change this to have cycle 21 and 22 for training, 23 for val, 24 for test
   print("Loading data...")
-  data = dp.omni_preprocess(START_TIME, END_TIME, ['BR'],
-                            make_tensors=True, split_mini_batches=True)['BR']
+  data = dp.omni_cycle_preprocess(START_TIME, END_TIME, ['BR'],
+                                  make_tensors=True, split_mini_batches=True)['BR']
 
   # %%
   # =========================================================================

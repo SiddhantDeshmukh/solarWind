@@ -29,8 +29,9 @@ START_TIME = datetime(1995, 1, 1)
 END_TIME = datetime(2020, 12, 31)
 
 # %%
-data = dp.omni_preprocess(START_TIME, END_TIME, get_geoeffectiveness=True,
-                          make_tensors=True, split_mini_batches=False)
+data = dp.omni_cycle_preprocess(START_TIME, END_TIME, get_geoeffectiveness=True,
+                                make_tensors=True, split_mini_batches=False,
+                                remove_nans=False)
 
 # %%
 # density, wind speed, HMF intensity, HMF clock angle, geoeffectiveness
@@ -84,19 +85,31 @@ for key in combined_data.keys():
 #     START_TIME, END_TIME, make_tensors=True, split_mini_batches=True)['BR']
 
 # %%
-# Create a custom TensorDataset and DataLoader
-keys = ["N", "V", "ABS_B"]
-data = dp.get_omni_rtn_data(START_TIME, END_TIME).to_dataframe()
-print(f"{data.keys()}, {len(data)}")
+# Create custom TensorDatasets and Loaders for train,val,test
+# TensorDataset from combined data
+train_set = TensorDataset(
+    combined_data['train_in'], combined_data['train_out'])
+val_set = TensorDataset(
+    combined_data['val_in'], combined_data['val_out'])
+test_set = TensorDataset(
+    combined_data['test_in'], combined_data['test_out'])
 
-# %%
-dataset = TensorDataset(
-    *[torch.from_numpy(data[key].values) for key in keys])
-loader = DataLoader(dataset, batch_size=10000)
+# DataLoaders
+train_loader = DataLoader(train_set, batch_size=10000)
+val_set = DataLoader(val_set, batch_size=10000)
+test_set = DataLoader(test_set, batch_size=10000)
 
-for batch_idx, (n, v, absb) in enumerate(loader):
-  print(batch_idx, n.size(), v.size(), absb.size())
-  print(torch.cat((n, v, absb), 1).size())
+print("Train loader")
+for batch_idx, (features, targets) in enumerate(train_loader):
+  print(batch_idx, features.size(), targets.size())
+
+print("Val loader")
+for batch_idx, (features, targets) in enumerate(train_loader):
+  print(batch_idx, features.size(), targets.size())
+
+print("Test loader")
+for batch_idx, (features, targets) in enumerate(train_loader):
+  print(batch_idx, features.size(), targets.size())
 
 # %%
 
