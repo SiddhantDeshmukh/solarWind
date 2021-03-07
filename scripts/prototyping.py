@@ -29,87 +29,54 @@ START_TIME = datetime(1995, 1, 1)
 END_TIME = datetime(2020, 12, 31)
 
 # %%
-data = dp.omni_cycle_preprocess(START_TIME, END_TIME, get_geoeffectiveness=True,
-                                make_tensors=True, split_mini_batches=False,
-                                remove_nans=False)
+data, keys = dp.omni_cycle_preprocess(START_TIME, END_TIME,
+                                      # auto get ["N", "V", "ABS_B", "HMF_INC"]
+                                      get_geoeffectiveness=True,
+                                      make_tensors=True, normalise_tensors=True,
+                                      normalisation_limits=(-1, 1))
+
+print(data.keys(), keys)
+for key in data.keys():
+  # Check dimensionality and remove geoeffectiveness from each
+  # last index is G by default
+  data[key] = data[key][:, :, :keys.index("G")]
+  print(f"{key} shape: {data[key].shape}")
 
 # %%
-# density, wind speed, HMF intensity, HMF clock angle, geoeffectiveness
-train_keys = ["N", "V", "ABS_B", "HMF_INC"]
-keys = list(data[train_keys[0]].keys())  # 'train_in', 'train_out', ...
-predict_keys = ["G"]
 
-# Want to predict N, V, ABS_B, HMF_INC, for testing, turn into
-# geoeffectiveness and compare to actual values
-combined_data = {}
+# # %%
+# # Plot to make sure the normalisation works, etc
+# fig, axes = plt.subplots(1, 3)  # cols: train, val, test
 
-# In 'test' set, 'N' has ~4000 less elements
-for key in keys:
-  # Cat on 'num_features' axis
-  axis = 2 if key.endswith("in") else 1
-  print(key, axis, data["N"][key].size())
-  combined_data[key] = torch.cat(
-      ([data[feat_key][key] for feat_key in train_keys]), dim=axis)
-  print(key)
+# for i, key in enumerate(train_keys):
+#   # Training
+#   axes[0].plot(combined_data['train_in'][0, :, i], label=key)
 
-for key in combined_data.keys():
-  print(f"{key} size: {combined_data[key].size()}")
+# # Validation
+#   axes[1].plot(combined_data['val_in'][0, :, i], label=key)
 
-# train_in = torch.cat(([data[key]["train_in"] for key in train_keys]), 2)
-# train_out = torch.cat(
-#     ([data[key]["train_out"].unsqueeze(1) for key in train_keys]), 1)
-# val_in = torch.cat(([data[key]["val_in"] for key in train_keys]), 2)
-# val_out = torch.cat(([data[key]["val_out"].unsqueeze(1)
-#                       for key in train_keys]), 1)
+# # Testing
+#   axes[2].plot(combined_data['test_in'][0, :, i], label=key)
 
-# print(f"Train in size: {train_in.size()}")
-# print(f"Train out size: {train_out.size()}")
-# print(f"Val in size: {val_in.size()}")
-# print(f"Val out size: {val_out.size()}")
+#   axes[2].legend()
 
-# # Split into mini-batches
-# data = {
-#     "train_in": train_in,
-#     "train_out": train_out,
-#     "val_in": val_in,
-#     "val_out": val_out,
-# }
-
-
-# data = dp.split_data_mini_batches(
-#     data, 32, input_batch_dim=0, output_batch_dim=0,
-#     input_size=3, output_size=2)
-
-# Just BR for testing!
-# data = dp.omni_preprocess(
-#     START_TIME, END_TIME, make_tensors=True, split_mini_batches=True)['BR']
-
+# plt.show()
 # %%
 # Create custom TensorDatasets and Loaders for train,val,test
 # TensorDataset from combined data
+print("Creating Tensor Datasets")
 train_set = TensorDataset(
-    combined_data['train_in'], combined_data['train_out'])
+    data['train_in'], data['train_out'])
 val_set = TensorDataset(
-    combined_data['val_in'], combined_data['val_out'])
+    data['val_in'], data['val_out'])
 test_set = TensorDataset(
-    combined_data['test_in'], combined_data['test_out'])
+    data['test_in'], data['test_out'])
 
 # DataLoaders
-train_loader = DataLoader(train_set, batch_size=10000)
-val_set = DataLoader(val_set, batch_size=10000)
-test_set = DataLoader(test_set, batch_size=10000)
-
-print("Train loader")
-for batch_idx, (features, targets) in enumerate(train_loader):
-  print(batch_idx, features.size(), targets.size())
-
-print("Val loader")
-for batch_idx, (features, targets) in enumerate(train_loader):
-  print(batch_idx, features.size(), targets.size())
-
-print("Test loader")
-for batch_idx, (features, targets) in enumerate(train_loader):
-  print(batch_idx, features.size(), targets.size())
+batch_size = 32
+train_loader = DataLoader(train_set, batch_size=batch_size)
+val_loader = DataLoader(val_set, batch_size=batch_size)
+test_loader = DataLoader(test_set, batch_size=batch_size)
 
 # %%
 
@@ -119,7 +86,7 @@ class MV_LSTM(nn.Module):
     super(MV_LSTM, self).__init__()
     self.n_features = n_features
     self.seq_length = seq_length
-    self.n_hidden = 32  # number of hidden states (cells)
+    self.n_hidden = 20  # number of hidden states (cells)
     self.n_layers = 1  # number of stacked LSTM layers
 
     self.lstm = nn.LSTM(input_size=self.n_features,
@@ -128,7 +95,7 @@ class MV_LSTM(nn.Module):
                         batch_first=True)
     # Output of LSTM is (batch_size, seq_len, num_directions * hidden_size)
     self.linear = nn.Linear(
-        self.n_hidden * self.seq_length, 1)
+        self.n_hidden * self.seq_length, 1)  # pass in output size
 
   def init_hidden(self, batch_size):
     # Initialise hidden state of LSTM layer
@@ -153,38 +120,91 @@ optimiser = optim.Adam(model.parameters(), lr=1e-3)
 metrics = []
 
 
-def train(model, device, train_in, train_out, optimiser, loss_func, epoch):
-  # Train 'model' on 'train_in'
+def train(model, device, train_loader, optimiser, loss_func, epoch):
+  # Train 'model' and return average training loss
   model.train()
-  batch_size, num_batches = train_in[0].size()[0], len(train_in)
+  train_set_size = len(train_loader.dataset)
+  num_batches = len(train_loader)
   train_loss = 0.0
 
-  for batch_idx, (data, target) in enumerate(zip(train_in, train_out)):
+  for batch_idx, (data, target) in enumerate(train_loader):
     data, target = data.to(device), target.to(device)
+    batch_size = len(data)
     optimiser.zero_grad()
     model.init_hidden(batch_size)
     output = model(data)
+    print(output.shape, target.shape)
     loss = loss_func(output, target)
     train_loss += loss.item()
 
     loss.backward()
     optimiser.step()
 
-    if batch_idx % 100 == 0:
-      print(f"Train Epoch: {epoch}, batch {batch_idx+1} / {num_batches} "
-            f"\tLoss: {loss.item():.6f}")
+    if batch_idx % (num_batches // 10) == 0:
+      # print(f"Train Epoch: {epoch}, batch {batch_idx+1} / {num_batches} "
+      #       f"\tLoss: {loss.item():.6f}")
+      print(f"Train Epoch: {epoch+1} [{batch_idx * batch_size}/{train_set_size} "
+            f"({100. * batch_idx / num_batches:.0f}%)]\tLoss: {loss.item():.2e}")
 
   avg_train_loss = train_loss / num_batches
 
   return avg_train_loss
 
 
-num_epochs = 5
-for epoch in range(num_epochs):
-  avg_train_loss = train(model, 'cpu', data["train_in"],
-                         data["train_out"], optimiser, loss_func, epoch)
+def validate(model, device, val_loader, optimiser, loss_func):
+  # Validate 'model' and return average validation loss
+  model.eval()
+  num_batches = len(val_loader)
+  val_loss = 0.0
 
-  print(f"Epoch {epoch}: Avg train loss = {avg_train_loss:.3E}")
+  for batch_idx, (data, target) in enumerate(val_loader):
+    data, target = data.to(device), target.to(device)
+    batch_size = len(data)
+    optimiser.zero_grad()
+    model.init_hidden(batch_size)
+    output = model(data)
+    loss = loss_func(output, target)
+    val_loss += loss.item()
+
+    loss.backward()
+    optimiser.step()
+
+  avg_val_loss = val_loss / num_batches
+  print(f"Average validation loss: {avg_val_loss:.2e}")
+
+  return avg_val_loss
+
+
+num_epochs = 1
+for epoch in range(num_epochs):
+  avg_train_loss = train(model, 'cpu', train_loader,
+                         optimiser, loss_func, epoch)
+
+  avg_val_loss = validate(model, "cpu", val_loader, optimiser, loss_func)
+
+  print(f"Epoch {epoch+1}: Avg train loss = {avg_train_loss:.3E}")
+  print(f"Epoch {epoch+1}: Avg validation loss = {avg_val_loss:.3E}")
+
+# Test
+avg_test_loss = validate(model, "cpu", test_loader, optimiser, loss_func)
+print(f"Epoch {epoch+1}: Avg test loss = {avg_test_loss:.3E}")
+
+# Keep track of losses as a list, save that
+# Save model as a checkpoint
+checkpoint = {
+    'epoch': epoch,
+    'model_state_dict': model.state_dict(),
+    'optimizer_state_dict': optimiser.state_dict(),
+    'last_train_loss': avg_train_loss,
+    'last_val_loss': avg_val_loss,
+    'last_test_loss': avg_test_loss
+}
+
+# torch.save(checkpoint, './test.pt')
+
+# # %%
+# # Load model (test)
+# model_load = torch.load('./test.pt')
 
 # %%
 # # Quick plotting

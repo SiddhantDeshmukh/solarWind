@@ -141,6 +141,19 @@ def load_solar_cycles_df():
 # =========================================================================
 
 
+def get_nan_idxs(data: np.ndarray, n=24):
+  # 'n' corresponds to length of slice, default 24 (hourly cadence)
+  # same 'n' as in 'split_into_n_hour_sections()'
+  idx_edge = n + 1  # check 'n' elements forwards
+  nan_check = np.array([data[i:i + idx_edge]
+                        for i in range(len(data) - idx_edge + 1)])
+
+  # Remove 'nan' indices
+  nan_idxs = np.where([np.any(np.isnan(i)) for i in nan_check])[0]
+
+  return nan_idxs.tolist()
+
+
 def remove_nans_from_data(data: np.ndarray,
                           model_inputs: np.ndarray, model_outputs: np.ndarray, n=24):
   # 'n' corresponds to length of slice (default 24, same as in
@@ -160,6 +173,25 @@ def remove_nans_from_data(data: np.ndarray,
       f"Any NanNs? {np.any(np.isnan(model_inputs)) or np.any(np.isnan(model_outputs))}")
 
   return model_inputs, model_outputs
+
+
+def lstm_prepare_nd(multi_array, input_length, output_length):
+  inputs = np.array([multi_array[i:i + input_length]
+                     for i in range(len(multi_array) - input_length - output_length + 1)])
+  outputs = np.array([multi_array[i + input_length:i + input_length + output_length]
+                      for i in range(len(multi_array) - input_length - output_length + 1)])
+
+  nan_check = np.array([multi_array[i:i + input_length + output_length]
+                        for i in range(len(multi_array) - input_length - output_length + 1)])
+
+  inputs = inputs[np.where([~np.any(np.isnan(i)) for i in nan_check])]
+  outputs = outputs[np.where([~np.any(np.isnan(i)) for i in nan_check])]
+
+  print("Input shape:", inputs.shape)
+  print("Output shape:", outputs.shape)
+  print("Any Nans?:", np.any(np.isnan(outputs))
+        or np.any(np.isnan(inputs)))
+  return inputs, outputs
 
 # =========================================================================
 # Data splitting
@@ -210,40 +242,11 @@ def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
 
 def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
                           keys=["BR"], get_geoeffectiveness=False,
-                          make_tensors=False, split_mini_batches=False,
-                          mini_batch_size=32,
-                          normalise_tensors=False, normalisation_limits=[(0, 1)],
-                          n_hours=24, remove_nans=True,
-                          train_cycles=[21, 23], val_cycles=[22], test_cycles=[24]):
-  # 'normalisation_limits' is list of tuples corresponding to lower and
-  # upper min-max normaliastion limits for each key. Needs 1 Tuple (or None
-  # to ignore normalisation) per key!
-
-  # Wrapper function around 'get_omni_rtn_data()' and 'split...()'
-  # Splits data into training, validation and testing datasets depending
-  # on solar cycles chosen
-  # 'n_hours' is number of hours to split data into (default 24)
-  # By default, splits into cycles 21, 23 for training, 22 for validation
-  # and 24 for testing
-  # Note that 'start_time' and 'end_time' must span all cycles (this is
-  # not checked below), e.g. for the default case which includes cycles
-  # 21-24, the minimum time window is from the start of cycle 21 to the
-  # end of cycle 24
+                          make_tensors=False,
+                          normalise_tensors=False, normalisation_limits=(0, 1),
+                          n_hours=24):
+  # 'normalisation_limits' is tuple (min-max); all keys normalised to this
   data = get_omni_rtn_data(start_time, end_time).to_dataframe()
-  output_data = {}
-
-  # Check if we should split by solar cycle; else do not split data!
-
-  # Load solar cycles DF
-  cycles_df = load_solar_cycles_df()
-
-  # Determine index ranges for train, val and test data from cycles
-  train_idx_ranges = [get_cycle_idx(
-      data[keys[0]], cycles_df, train_cycle) for train_cycle in train_cycles]
-  val_idx_ranges = [get_cycle_idx(
-      data[keys[0]], cycles_df, val_cycle) for val_cycle in val_cycles]
-  test_idx_ranges = [get_cycle_idx(
-      data[keys[0]], cycles_df, test_cycle) for test_cycle in test_cycles]
 
   # Overwrite keys and get inclination angle, calculate geoeffectiveness
   if get_geoeffectiveness:
@@ -258,58 +261,48 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
 
     keys = ["N", "ABS_B", "V", "HMF_INC", "G"]
 
-  for i, key in enumerate(keys):
-    print(f"Loading {key}...")
-    array = np.array(data[key])
-    arr_input, arr_output = split_into_n_hour_sections(
-        array, n_hours, remove_nans=remove_nans)
+  data = data[keys]
 
-    # Slice train, val, test
-    train_in, train_out = slice_data_ranges(
-        arr_input, arr_output, train_idx_ranges)
-    val_in, val_out = slice_data_ranges(
-        arr_input, arr_output, val_idx_ranges)
-    test_in, test_out = slice_data_ranges(
-        arr_input, arr_output, test_idx_ranges)
+  # Remove all NaNs (and change to Numpy arrays)
+  inputs, outputs = lstm_prepare_nd(data.values, n_hours, n_hours)
 
-    arr_dict = {
-        "train_in": train_in,
-        "val_in": val_in,
-        "test_in": test_in,
-        "train_out": train_out,
-        "val_out": val_out,
-        "test_out": test_out
-    }
+  # Just divide 60/20/20 train/val/test
+  train_end_idx = int(0.6 * len(inputs))
+  val_end_idx = int(0.8 * len(inputs))
 
-    if make_tensors:  # NumPy ndarray -> PyTorch Tensor
-     # For LSTM, Torch expects [batch_size, seq_len, num_feat]
-     # Same as TensorFlow! Make sure to flag 'batch_first=True' in LSTM()
-      print("Creating tensors (for PyTorch!)")
-      for arr_key in arr_dict.keys():
-        if isinstance(arr_dict[arr_key], np.ndarray):
-          tensor = torch.from_numpy(arr_dict[arr_key])
+  train_in = inputs[:train_end_idx]
+  train_out = outputs[:train_end_idx]
 
-          if normalise_tensors:
-            print("Normalising tensors...")
-            if normalisation_limits[i] is None:
-              print(f"'{key}' will not be normalised.")
-            else:
-              tensor = normalise_tensor(tensor, normalisation_limits[i])
+  val_in = inputs[train_end_idx:val_end_idx]
+  val_out = outputs[train_end_idx:val_end_idx]
 
-          arr_dict[arr_key] = tensor
+  test_in = inputs[val_end_idx:]
+  test_out = outputs[val_end_idx:]
 
-    if split_mini_batches:
-      print("Splitting into mini-batches")
-      batch_dim = 0  # first index is always 'batch_size'
+  arr_dict = {
+      "train_in": train_in,
+      "train_out": train_out,
+      "val_in": val_in,
+      "val_out": val_out,
+      "test_in": test_in,
+      "test_out": test_out
+  }
 
-      # Write a function to find the number of mini batches based on the
-      # ideal mini batch size
-      arr_dict = split_data_mini_batches(
-          arr_dict, mini_batch_size, input_batch_dim=batch_dim)
+  if make_tensors:  # NumPy ndarray -> PyTorch Tensor
+    # For LSTM, Torch expects [batch_size, seq_len, num_feat]
+    # Same as TensorFlow! Make sure to flag 'batch_first=True' in LSTM()
+    print("Creating tensors (for PyTorch!)")
+    for arr_key in arr_dict.keys():
+      if isinstance(arr_dict[arr_key], np.ndarray):
+        tensor = torch.from_numpy(arr_dict[arr_key])
 
-    output_data[key] = arr_dict
+        if normalise_tensors:
+          print("Normalising tensors...")
+          tensor = normalise_tensor(tensor, normalisation_limits)
 
-  return output_data
+        arr_dict[arr_key] = tensor
+
+  return arr_dict, keys
 
 
 def split_data_mini_batches(data: Dict, mini_batch_size: int,
