@@ -4,6 +4,7 @@
 # =========================================================================
 # Imports
 # =========================================================================
+from collections import defaultdict
 from typing import Dict, List, Tuple
 import numpy as np
 import heliopy.data.omni as omni
@@ -56,6 +57,21 @@ def normalise_tensor(tensor: Tensor, limits: Tuple):
       (tensor_max - tensor_min)
 
   return scaled_tensor
+
+
+def normalise_array(array: np.ndarray, limits: Tuple):
+  # Applies min-max normalisation
+  # Takes a PyTorch Tensor and a tuple of (left_limit, right_limit)
+  # to linearly normalise the data
+  arr_min, arr_max = np.nanmin(array), np.nanmax(array)
+  lower_lim, upper_lim = limits
+  scaled_array = lower_lim + \
+      ((array - arr_min) * (upper_lim - lower_lim)) / \
+      (arr_max - arr_min)
+
+  return scaled_array
+
+
 # =========================================================================
 # Timestamping
 # =========================================================================
@@ -95,8 +111,17 @@ def time_window_to_time_delta(time_window: Quantity) -> pd.Timedelta:
 def calculate_geoeffectiveness(wind_density: np.ndarray,
                                hmf_intensity: np.ndarray,
                                wind_speed: np.ndarray,
-                               hmf_clock_angle: np.ndarray) -> np.ndarray:
+                               hmf_clock_angle: np.ndarray,
+                               norm_angle=False) -> np.ndarray:
+  # 'norm_angle' refers to the domain of 'hmf_clock_angle'.
+  # False: theta ~ [-pi, pi] (standard)
+  # True: theta ~ [0, 2pi] (new normalisation, subtract pi to revert)
   alpha = 0.5  # empirically determined
+
+  # Revert domain to [-pi, pi] from [0, 2pi]
+  if norm_angle:
+    hmf_clock_angle -= np.pi
+
   geoffectiveness = wind_density**(2/3 - alpha) * \
       hmf_intensity**(2*alpha) * \
       wind_speed**(7/3 - 2 * alpha) * \
@@ -242,9 +267,7 @@ def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
 
 def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
                           keys=["BR"], get_geoeffectiveness=False,
-                          make_tensors=False,
-                          normalise_tensors=False, normalisation_limits=(0, 1),
-                          n_hours=24):
+                          make_tensors=False, normalise=False, n_hours=24):
   # 'normalisation_limits' is tuple (min-max); all keys normalised to this
   data = get_omni_rtn_data(start_time, end_time).to_dataframe()
 
@@ -262,6 +285,23 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
     keys = ["N", "ABS_B", "V", "HMF_INC", "G"]
 
   data = data[keys]
+
+  # Normalise here! Probably need to normalise EACH key SEPARATELY
+  # Instead of passing it in, just create a dict with standard values with
+  # a 'standard_normalisation' bool
+  std_norm_lim = defaultdict(lambda: (0, 1), {})
+
+  if normalise:
+    for key in data.keys():
+      # Shift domain to [0, 2pi]; when calculating G make sure to REVERT
+      # this by subtracting pi/2 in the sin!
+      if key == 'HMF_INC':
+        data[key] += np.abs(np.min(data[key]))
+
+      print(key, np.min(data[key]), np.max(data[key]))
+      norm_lims = std_norm_lim[key]
+      print(f"Normalising {key} in range {norm_lims}.")
+      data[key] = normalise_array(data[key].values, norm_lims)
 
   # Remove all NaNs (and change to Numpy arrays)
   inputs, outputs = lstm_prepare_nd(data.values, n_hours, n_hours)
@@ -295,11 +335,6 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
     for arr_key in arr_dict.keys():
       if isinstance(arr_dict[arr_key], np.ndarray):
         tensor = torch.from_numpy(arr_dict[arr_key])
-
-        if normalise_tensors:
-          print("Normalising tensors...")
-          tensor = normalise_tensor(tensor, normalisation_limits)
-
         arr_dict[arr_key] = tensor
 
   return arr_dict, keys

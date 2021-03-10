@@ -15,8 +15,18 @@ import torch
 def calculate_geoeffectiveness(wind_density: np.ndarray,
                                hmf_intensity: np.ndarray,
                                wind_speed: np.ndarray,
-                               hmf_clock_angle: np.ndarray) -> np.ndarray:
+                               hmf_clock_angle: np.ndarray,
+                               norm_angle=False) -> np.ndarray:
+
+  # 'norm_angle' refers to the domain of 'hmf_clock_angle'.
+  # False: theta ~ [-pi, pi] (standard)
+  # True: theta ~ [0, 2pi] (new normalisation, subtract pi to revert)
   alpha = 0.5  # empirically determined
+
+  # Revert domain to [-pi, pi] from [0, 2pi]
+  if norm_angle:
+    hmf_clock_angle -= np.pi
+
   geoffectiveness = wind_density**(2/3 - alpha) * \
       hmf_intensity**(2*alpha) * \
       wind_speed**(7/3 - 2 * alpha) * \
@@ -32,8 +42,8 @@ END_TIME = datetime(2020, 12, 31)
 data, keys = dp.omni_cycle_preprocess(START_TIME, END_TIME,
                                       # auto get ["N", "V", "ABS_B", "HMF_INC"]
                                       get_geoeffectiveness=True,
-                                      make_tensors=True, normalise_tensors=True,
-                                      normalisation_limits=(-1, 1))
+                                      normalise=True)
+
 
 print(data.keys(), keys)
 for key in data.keys():
