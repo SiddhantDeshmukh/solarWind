@@ -12,29 +12,6 @@ import matplotlib.pyplot as plt
 import torch
 
 
-def calculate_geoeffectiveness(wind_density: np.ndarray,
-                               hmf_intensity: np.ndarray,
-                               wind_speed: np.ndarray,
-                               hmf_clock_angle: np.ndarray,
-                               norm_angle=False) -> np.ndarray:
-
-  # 'norm_angle' refers to the domain of 'hmf_clock_angle'.
-  # False: theta ~ [-pi, pi] (standard)
-  # True: theta ~ [0, 2pi] (new normalisation, subtract pi to revert)
-  alpha = 0.5  # empirically determined
-
-  # Revert domain to [-pi, pi] from [0, 2pi]
-  if norm_angle:
-    hmf_clock_angle -= np.pi
-
-  geoffectiveness = wind_density**(2/3 - alpha) * \
-      hmf_intensity**(2*alpha) * \
-      wind_speed**(7/3 - 2 * alpha) * \
-      np.sin(hmf_clock_angle / 2)**4
-
-  return geoffectiveness
-
-
 START_TIME = datetime(1995, 1, 1)
 END_TIME = datetime(2020, 12, 31)
 

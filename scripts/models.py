@@ -1,5 +1,6 @@
 import tensorflow.keras as keras
 from typing import List
+from tensorflow.python.keras.layers.core import RepeatVector
 import torch
 import torch.nn as nn
 
@@ -23,11 +24,17 @@ def deep_rnn():
   return model
 
 
-def lstm_model():
+def lstm_model(num_features=1, output_length=1):
+  # Multiple parallel input and multi-step output using
+  # TimeDistributed Dense layer
   model = keras.models.Sequential([
-      keras.layers.LSTM(20, activation="linear",
-                        name="lstm_initial", input_shape=[None, 1]),
-      keras.layers.Dense(1, name="dense_final", activation="linear")
+      keras.layers.LSTM(32, activation="relu",
+                        input_shape=[None, num_features]),
+      keras.layers.RepeatVector(output_length),
+      keras.layers.LSTM(32, activation='relu', return_sequences=True),
+      keras.layers.TimeDistributed(
+          keras.layers.Dense(
+              num_features, activation="linear")),
   ])
 
   return model
