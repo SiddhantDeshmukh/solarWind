@@ -1,8 +1,30 @@
 import tensorflow.keras as keras
+from tensorflow.keras import backend as K
 from typing import List
 from tensorflow.python.keras.layers.core import RepeatVector
-import torch
-import torch.nn as nn
+from tensorflow.python.keras.layers.dense_attention import Attention
+
+
+class CustomAttention(keras.layers.Layer):
+  def __init__(self, return_sequences=True):
+    self.return_sequences = return_sequences
+    super(CustomAttention, self).__init__()
+
+  def build(self, input_shape):
+    self.W = self.add_weight(name="att_weight", shape=(
+        input_shape[-1], 1), initializer='normal')
+    self.b = self.add_weight(name="att_bias", shape=(
+        input_shape[1], 1), initializer='zeros')
+
+    super(CustomAttention, self).build(input_shape)
+
+  def call(self, x):
+    e = K.tanh(K.dot(x, self.W) + self.b)
+    a = K.softmax(e, axis=1)
+
+    output = x * a
+
+    return output if self.return_sequences else K.sum(output, axis=1)
 
 
 def simple_rnn():
@@ -24,17 +46,31 @@ def deep_rnn():
   return model
 
 
-def lstm_model(num_features=1, output_length=1):
+def lstm_model(input_length=24, num_features=1, output_length=1):
   # Multiple parallel input and multi-step output using
   # TimeDistributed Dense layer
   model = keras.models.Sequential([
-      keras.layers.LSTM(32, activation="relu",
-                        input_shape=[None, num_features]),
+      keras.layers.LSTM(32, input_shape=[input_length, num_features]),
       keras.layers.RepeatVector(output_length),
-      keras.layers.LSTM(32, activation='relu', return_sequences=True),
+      keras.layers.LSTM(32,  return_sequences=True),
       keras.layers.TimeDistributed(
-          keras.layers.Dense(
-              num_features, activation="linear")),
+          keras.layers.Dense(num_features, activation="linear")
+      ),
+  ])
+
+  return model
+
+
+def lstm_attention_model(input_length=24, num_features=1, output_length=1):
+  # Similar to 'lstm_model' but builds an additional attention network
+  model = keras.models.Sequential([
+      keras.layers.LSTM(32, input_shape=(input_length, num_features),
+                        return_sequences=True),
+      CustomAttention(return_sequences=True),
+      keras.layers.LSTM(32, return_sequences=True),
+      keras.layers.TimeDistributed(
+          keras.layers.Dense(num_features, activation='linear')
+      )
   ])
 
   return model

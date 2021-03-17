@@ -33,24 +33,45 @@ if __name__ == "__main__":
 
 # %%
   # LSTM model
-  model = models.lstm_model(num_features=4, output_length=OUTPUT_LENGTH)
-  print(model.summary())
+  parallel_lstm = models.lstm_model(
+      input_length=INPUT_LENGTH, num_features=4, output_length=OUTPUT_LENGTH)
+  print(parallel_lstm.summary())
+
+  attention_lstm = models.lstm_attention_model(
+      input_length=INPUT_LENGTH, num_features=4, output_length=OUTPUT_LENGTH)
+  print(attention_lstm.summary())
 
   # %%
-  # Compile model
-  model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+  # Optimizer
+  optimizer = keras.optimizers.Adam(lr=1e-3)
 
-  # Fit model
-  model.fit(data['train_in'], data['train_out'],
-            validation_data=(data['val_in'], data['val_out']),
-            batch_size=32, epochs=30,
-            callbacks=keras.callbacks.EarlyStopping(
-                restore_best_weights=True, patience=30)
-            )
+  # Compile parallel LSTM model
+  parallel_lstm.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
+
+  # Compile attention LSTM model
+  attention_lstm.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
+
+  # Fit parallel LSTM model model
+  parallel_lstm.fit(data['train_in'], data['train_out'],
+                    validation_data=(data['val_in'], data['val_out']),
+                    batch_size=32, epochs=30,
+                    callbacks=keras.callbacks.EarlyStopping(
+                        restore_best_weights=True, patience=10),
+                    verbose=2
+                    )
+
+  # Fit attention LSTM model
+  attention_lstm.fit(data['train_in'], data['train_out'],
+                     validation_data=(data['val_in'], data['val_out']),
+                     batch_size=32, epochs=30,
+                     callbacks=keras.callbacks.EarlyStopping(
+                         restore_best_weights=True, patience=10),
+                     verbose=2
+                     )
 
   # %%
   # Test set evaluation
-  model.evaluate(data['test_in'], data['test_out'])
+  parallel_lstm.evaluate(data['test_in'], data['test_out'])
 
   # Simple baselines
   naive_start_test = naive_forecast_start(data['test_in'])
