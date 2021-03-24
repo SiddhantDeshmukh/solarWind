@@ -59,7 +59,7 @@ if __name__ == "__main__":
                         restore_best_weights=True, patience=10),
                     verbose=2
                     )
-
+# %%
   # Fit attention LSTM model
   attention_lstm.fit(data['train_in'], data['train_out'],
                      validation_data=(data['val_in'], data['val_out']),

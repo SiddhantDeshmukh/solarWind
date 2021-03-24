@@ -1,8 +1,6 @@
 import tensorflow.keras as keras
 from tensorflow.keras import backend as K
 from typing import List
-from tensorflow.python.keras.layers.core import RepeatVector
-from tensorflow.python.keras.layers.dense_attention import Attention
 
 
 class CustomAttention(keras.layers.Layer):
@@ -27,20 +25,27 @@ class CustomAttention(keras.layers.Layer):
     return output if self.return_sequences else K.sum(output, axis=1)
 
 
-def simple_rnn():
+def simple_rnn(input_length=24, num_features=1, output_length=1):
   model = keras.models.Sequential([
-      keras.layers.SimpleRNN(1, input_shape=[None, 1])
+      keras.layers.SimpleRNN(20, input_shape=[input_length, num_features]),
+      keras.layers.RepeatVector(output_length),
+      keras.layers.TimeDistributed(
+          keras.layers.Dense(num_features, activation="linear")
+      ),
   ])
 
   return model
 
 
-def deep_rnn():
+def deep_rnn(input_length=24, num_features=1, output_length=1):
   model = keras.models.Sequential([
-      keras.layers.SimpleRNN(
-          20, return_sequences=True, input_shape=[None, 1]),
+      keras.layers.SimpleRNN(20, return_sequences=True,
+                             input_shape=[input_length, num_features]),
+      keras.layers.RepeatVector(output_length),
       keras.layers.SimpleRNN(20, return_sequences=True),
-      keras.layers.SimpleRNN(1)
+      keras.layers.TimeDistributed(
+          keras.layers.Dense(num_features, activation="linear")
+      ),
   ])
 
   return model
@@ -76,16 +81,22 @@ def lstm_attention_model(input_length=24, num_features=1, output_length=1):
   return model
 
 
-def conv_gru_model():
+def conv_gru_model(input_length=24, num_features=1, output_length=1):
   # 1D conv layer to process sequences, then GRU cells for time series
   # predictions
   model = keras.models.Sequential([
       keras.layers.Conv1D(filters=20, kernel_size=4, strides=2,
-                          padding="valid", input_shape=[None, 1]),
+                          padding="valid",
+                          input_shape=[input_length, num_features]),
       keras.layers.GRU(20, return_sequences=True),
+      keras.layers.RepeatVector(output_length),
       keras.layers.GRU(20, return_sequences=True),
-      keras.layers.TimeDistributed()
+      keras.layers.TimeDistributed(
+          keras.layers.Dense(num_features, activation="linear")
+      ),
   ])
+
+  return model
 
 
 def create_lstm_model(num_lstm_layers: int,
