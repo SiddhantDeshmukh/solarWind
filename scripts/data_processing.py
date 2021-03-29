@@ -59,17 +59,15 @@ def normalise_tensor(tensor: Tensor, limits: Tuple):
   return scaled_tensor
 
 
-def normalise_array(array: np.ndarray, limits: Tuple):
-  # Applies min-max normalisation
-  # Takes a PyTorch Tensor and a tuple of (left_limit, right_limit)
-  # to linearly normalise the data
-  arr_min, arr_max = np.nanmin(array), np.nanmax(array)
-  lower_lim, upper_lim = limits
-  scaled_array = lower_lim + \
-      ((array - arr_min) * (upper_lim - lower_lim)) / \
-      (arr_max - arr_min)
+def standardise_array(array: np.ndarray, std_array: np.ndarray):
+  # Normalises data to have a mean of 0 and a variance of 1
+  # 'array' is the array to normalise, 'std_array' is the array to
+  # use for mean and std_dev
+  # e.g. 'array' could be a
+  mean, std = np.nanmean(std_array, axis=0), np.nanstd(std_array, axis=0)
+  normalised_array = (array - mean) / std
 
-  return scaled_array
+  return normalised_array, mean, std
 
 
 # =========================================================================
@@ -267,7 +265,7 @@ def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
 
 def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
                           keys=["BR"], get_geoeffectiveness=False,
-                          make_tensors=False, normalise=False, n_hours=24):
+                          make_tensors=False, standardise=False, n_hours=24):
   # 'normalisation_limits' is tuple (min-max); all keys normalised to this
   data = get_omni_rtn_data(start_time, end_time).to_dataframe()
 
@@ -289,19 +287,7 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
   # Normalise here! Probably need to normalise EACH key SEPARATELY
   # Instead of passing it in, just create a dict with standard values with
   # a 'standard_normalisation' bool
-  std_norm_lim = defaultdict(lambda: (0, 1), {})
-
-  if normalise:
-    for key in data.keys():
-      # Shift domain to [0, 2pi]; when calculating G make sure to REVERT
-      # this by subtracting pi/2 in the sin!
-      if key == 'HMF_INC':
-        data[key] += np.abs(np.min(data[key]))
-
-      print(key, np.min(data[key]), np.max(data[key]))
-      norm_lims = std_norm_lim[key]
-      print(f"Normalising {key} in range {norm_lims}.")
-      data[key] = normalise_array(data[key].values, norm_lims)
+  # std_norm_lim = defaultdict(lambda: (0, 1), {})
 
   # Remove all NaNs (and change to Numpy arrays)
   inputs, outputs = lstm_prepare_nd(data.values, n_hours, n_hours)
@@ -310,6 +296,7 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
   train_end_idx = int(0.6 * len(inputs))
   val_end_idx = int(0.8 * len(inputs))
 
+  train_data = data.values[:train_end_idx]
   train_in = inputs[:train_end_idx]
   train_out = outputs[:train_end_idx]
 
@@ -328,6 +315,15 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
       "test_out": test_out
   }
 
+  if standardise:
+    for key, values in arr_dict.items():
+      # Do not standardise 'test'
+      if key.startswith('test'):
+        print(f"Found testing data {key}, not standardising.")
+      else:
+        print(f"Standardising {key} to have mean 0, variance 1.")
+        arr_dict[key], mean, std = standardise_array(values, train_data)
+
   if make_tensors:  # NumPy ndarray -> PyTorch Tensor
     # For LSTM, Torch expects [batch_size, seq_len, num_feat]
     # Same as TensorFlow! Make sure to flag 'batch_first=True' in LSTM()
@@ -337,7 +333,10 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
         tensor = torch.from_numpy(arr_dict[arr_key])
         arr_dict[arr_key] = tensor
 
-  return arr_dict, keys
+  if standardise:
+    return arr_dict, keys, mean, std
+  else:
+    return arr_dict, keys
 
 
 def split_data_mini_batches(data: Dict, mini_batch_size: int,
