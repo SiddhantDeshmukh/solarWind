@@ -1,4 +1,4 @@
-import data_processing as dp
+import data_processing as dapr
 import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
@@ -22,9 +22,12 @@ def get_middle_idx(list_: list) -> int:
 # =========================================================================
 # Error matrix functions
 # =========================================================================
+
+
 def create_error_matrix(data_before_forecast: np.array,
-    current_trend: np.array) -> np.array:
-  error_matrix = np.full((len(data_before_forecast), len(current_trend)), np.NaN)
+                        current_trend: np.array) -> np.array:
+  error_matrix = np.full(
+      (len(data_before_forecast), len(current_trend)), np.NaN)
 
   # Roll data in adjacent columns so that each row represents an analogue
   for i in range(len(current_trend)):
@@ -35,8 +38,9 @@ def create_error_matrix(data_before_forecast: np.array,
 
   return error_matrix
 
+
 def mse_error_matrix(data_before_forecast: np.array,
-    current_trend: np.array) -> np.array:
+                     current_trend: np.array) -> np.array:
   # Calculate MSE for 'before' data, used to find the best analogues
   # i.e. find the analogues most similar to the trend we have just seen,
   error_matrix = create_error_matrix(data_before_forecast, current_trend)
@@ -51,7 +55,7 @@ def mse_error_matrix(data_before_forecast: np.array,
 
 
 def rmse_error_matrix(data_before_forecast: np.array,
-    current_trend: np.array) -> np.array:
+                      current_trend: np.array) -> np.array:
   # Calculate RMSE for 'before' data, used to find the best analogues
   # i.e. find the analogues most similar to the trend we have just seen
   # RMSE - take root of mean over analogues
@@ -64,32 +68,40 @@ def rmse_error_matrix(data_before_forecast: np.array,
 # Analogue Ensemble functions
 # =========================================================================
 # Refactor to take in a cost function
-def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
-    training_window: Quantity, forecast_window: Quantity,
-    num_analogues: int) -> Union[np.array, np.array, pd.Series]:
+
+
+def run_analogue_ensemble(data: pd.DataFrame, forecast_time: pd.Timestamp,
+                          training_window: Quantity, forecast_window: Quantity,
+                          num_analogues: int) -> Union[np.array, np.array, pd.Series]:
   # Create an analogue ensemble prediction for a given set of data and
   # return the matrix of analogues, the prediction and the observed trend
   num_training_points = int(training_window.value)  # Utility for slicing
   num_all_points = int(training_window.value) + int(forecast_window.value)
 
   # Get the pre-forecast and post-forecast data (include forecast after)
-  trend_start_time = forecast_time - dp.time_window_to_time_delta(training_window)
+  trend_start_time = forecast_time - \
+      dapr.time_window_to_time_delta(training_window)
   data_before_forecast = data[data.index < trend_start_time]
 
-  trend_end_time = forecast_time + dp.time_window_to_time_delta(forecast_window)
-  
+  trend_end_time = forecast_time + \
+      dapr.time_window_to_time_delta(forecast_window)
+
   # Get the current trend
-  current_trend_mask = (data.index >= trend_start_time) & (data.index < trend_end_time)
+  current_trend_mask = (data.index >= trend_start_time) & (
+      data.index < trend_end_time)
   current_trend = data[current_trend_mask]
 
   # Get true observations over training and forecast period
-  observed_end_time = forecast_time + dp.time_window_to_time_delta(training_window)
-  observed_mask  = (data.index >= trend_start_time) & (data.index < observed_end_time)
+  observed_end_time = forecast_time + \
+      dapr.time_window_to_time_delta(training_window)
+  observed_mask = (data.index >= trend_start_time) & (
+      data.index < observed_end_time)
   observed_trend = data[observed_mask]
 
   # Check length, and if lengths don't match, return a failed state
   if len(observed_trend) != num_all_points:
-    print(f"Observed trend length {len(observed_trend)} does not match {num_all_points}.")
+    print(
+        f"Observed trend length {len(observed_trend)} does not match {num_all_points}.")
     print(f"Using first {num_all_points} points.")
     observed_trend = observed_trend[:num_all_points]
 
@@ -108,15 +120,17 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
   analogue_start_times = analogue_df.index
 
   # Full matrix includes analogues before and after forecast
-  analogue_matrix = np.full((len(analogue_df), num_training_points * 2), np.NaN)
+  analogue_matrix = np.full(
+      (len(analogue_df), num_training_points * 2), np.NaN)
   for i, start_time in enumerate(analogue_start_times):
-    end_time = start_time + dp.time_window_to_time_delta(training_window) \
-      + dp.time_window_to_time_delta(forecast_window)
+    end_time = start_time + dapr.time_window_to_time_delta(training_window) \
+        + dapr.time_window_to_time_delta(forecast_window)
     analogue = data[start_time: end_time].iloc[:-1]
 
     # Check length of analogue
     if len(analogue) != num_training_points * 2:
-      print(f"Warning: Analogue has length {len(analogue)} but should have length {num_training_points * 2}.")
+      print(
+          f"Warning: Analogue has length {len(analogue)} but should have length {num_training_points * 2}.")
 
       if len(analogue) > num_training_points * 2:  # too many points
         print(f"Taking first {num_training_points * 2} points.")
@@ -125,7 +139,7 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
       else:  # not enough points
         print("Duplicating previous analogue.")
         analogue = analogue_matrix[i - 1]
-    
+
     analogue_matrix[i] = analogue
 
   # 'Nanmedian' prediction
@@ -136,9 +150,11 @@ def run_analogue_ensemble(data:pd.DataFrame, forecast_time: pd.Timestamp,
 # =========================================================================
 # Plotting functions
 # =========================================================================
-def plot_analogue_ensemble(ax: plt.Axes, analogue_matrix: np.array, 
-    analogue_prediction: np.array, observed_trend: np.array,
-    xlabel="Time [h]", ylabel="", title=""):
+
+
+def plot_analogue_ensemble(ax: plt.Axes, analogue_matrix: np.array,
+                           analogue_prediction: np.array, observed_trend: np.array,
+                           xlabel="Time [h]", ylabel="", title=""):
   fig = None
   if ax is None:
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
@@ -153,14 +169,16 @@ def plot_analogue_ensemble(ax: plt.Axes, analogue_matrix: np.array,
   ax.plot(time_axis_full, analogue_matrix.T, color="lightgrey")
 
   # Plot observations
-  ax.plot(time_axis_full, observed_trend, color='blue', label='Observation')
+  ax.plot(time_axis_full, observed_trend,
+          color='blue', label='Observation')
 
   # Plot analogue prediction
-  ax.plot(time_axis_full, analogue_prediction, color='red', label='Median Prediction')
+  ax.plot(time_axis_full, analogue_prediction,
+          color='red', label='Median Prediction')
 
   # Aesthetics
   ax.axvline(color='k', ls='--')
-  
+
   ax.set_xlabel(xlabel, fontsize=18)
   ax.set_ylabel(ylabel, fontsize=18)
   ax.set_title(title, fontsize=20)
@@ -169,17 +187,19 @@ def plot_analogue_ensemble(ax: plt.Axes, analogue_matrix: np.array,
 
   return fig, ax
 
+
 if __name__ == "__main__":
   # 14 month window for finding analogues
   data_start_time = datetime(2017, 1, 1)
   data_end_time = datetime(2018, 2, 28)
 
   # Get OMNI data for specified range
-  omni_data = dp.get_omni_rtn_data(data_start_time, data_end_time).to_dataframe()
+  omni_data = dapr.get_omni_rtn_data(
+      data_start_time, data_end_time).to_dataframe()
 
   # Define properties for forecast
   forecast_time = pd.Timestamp(2017, 12, 5, 10, 0)
-  training_window = 24 * (u.hr)  # 24 hours before 'forecast_time' 
+  training_window = 24 * (u.hr)  # 24 hours before 'forecast_time'
   forecast_window = 24 * (u.hr)  # 24 hours after 'forecast_time'
   num_analogues = 10  # Number of analogues to find for ensemble
 
@@ -187,8 +207,8 @@ if __name__ == "__main__":
   data = omni_data['BR']
 
   analogue_matrix, analogue_prediction, observed_trend = \
-    run_analogue_ensemble(data, forecast_time, training_window,
-    forecast_window, num_analogues)
+      run_analogue_ensemble(data, forecast_time, training_window,
+                            forecast_window, num_analogues)
 
   # Plot observed, analogue ensemble and constituent analogues
   fig, axes = plt.subplots(1, 2, figsize=(16, 8))
@@ -197,20 +217,18 @@ if __name__ == "__main__":
   subplots_title = f"Forecast: {forecast_time}"
 
   plot_analogue_ensemble(axes[0], analogue_matrix, analogue_prediction,
-    observed_trend, ylabel="Radial Magnetic Field Strength [nT]")
+                         observed_trend, ylabel="Radial Magnetic Field Strength [nT]")
 
   # Test with radial wind speed
   data = omni_data["V"]
-  
+
   analogue_matrix, analogue_prediction, observed_trend = \
-    run_analogue_ensemble(data, forecast_time, training_window,
-    forecast_window, num_analogues)
+      run_analogue_ensemble(data, forecast_time, training_window,
+                            forecast_window, num_analogues)
 
   # Plot observed, analogue ensemble and constituent analogues
   plot_analogue_ensemble(axes[1], analogue_matrix, analogue_prediction,
-    observed_trend, ylabel=r"Radial Wind Velocity [km s$^{-1}$]")
+                         observed_trend, ylabel=r"Radial Wind Velocity [km s$^{-1}$]")
 
   plt.suptitle(subplots_title, fontsize=20)
   plt.savefig('./omni_AnEn.svg')
-
-

@@ -7,7 +7,7 @@ from baseline.baseline_metrics import naive_forecast_start, naive_forecast_end, 
 from loss_functions import mse, rmse
 import numpy as np
 
-import data_processing as dp
+import data_processing as dapr
 import os
 
 
@@ -19,10 +19,10 @@ END_TIME = datetime(2020, 12, 31)
 INPUT_LENGTH = 24
 OUTPUT_LENGTH = 24
 
-data, keys = dp.omni_cycle_preprocess(START_TIME, END_TIME,
-                                      # auto get ["N", "V", "ABS_B", "HMF_INC"]
-                                      get_geoeffectiveness=True,
-                                      standardise=True)
+data, keys = dapr.omni_cycle_preprocess(START_TIME, END_TIME,
+                                        # auto get ["N", "V", "ABS_B", "HMF_INC"]
+                                        get_geoeffectiveness=True,
+                                        standardise=True)
 
 for key in data.keys():
   # Check dimensionality and remove geoeffectiveness from each

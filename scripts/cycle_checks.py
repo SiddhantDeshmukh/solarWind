@@ -4,7 +4,7 @@
 # Imports
 # =========================================================================
 import pandas as pd
-import data_processing as dp
+import data_processing as dapr
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,6 +18,8 @@ solar_cycles = pd.read_csv(solar_cycles_csv, index_col=0)
 # =========================================================================
 # Datetime utility functions
 # =========================================================================
+
+
 def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
                         key='start_min', fmt='%Y-%m-%d'):
   # From the 'solar_cycles' DataFrame, get the 'key' datetime (formatted as
@@ -27,8 +29,11 @@ def datetime_from_cycle(solar_cycles: pd.DataFrame, cycle: int,
 # =========================================================================
 # Array utilities
 # =========================================================================
+
+
 def remove_nans(array: np.ndarray) -> np.ndarray:
   return array[~np.isnan(array)]
+
 
 # =========================================================================
 # Evaluate 'health' of each cycle
@@ -42,12 +47,13 @@ cycles = [21, 22, 23, 24]
 for i, cycle in enumerate(cycles):
   cycle_start = datetime_from_cycle(solar_cycles, cycle)
   cycle_end = datetime_from_cycle(solar_cycles, cycle, key='end')
-  cycle_data = dp.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
+  cycle_data = dapr.get_omni_rtn_data(
+      cycle_start, cycle_end).to_dataframe()
 
   cycle_health = {
-    'Cycle': cycle,
-    'Start': str(cycle_start.date()),
-    'End': str(cycle_end.date())
+      'Cycle': cycle,
+      'Start': str(cycle_start.date()),
+      'End': str(cycle_end.date())
   }
 
   keys = ['BR', 'V']
@@ -56,7 +62,8 @@ for i, cycle in enumerate(cycles):
   for key in keys:
     array = cycle_data[key].to_numpy()
     nan_vals_key = f'% NaN ({key})'
-    cycle_health[nan_vals_key] = (np.count_nonzero(np.isnan(array)) / cycle_health['Total Points']) * 100
+    cycle_health[nan_vals_key] = (np.count_nonzero(
+        np.isnan(array)) / cycle_health['Total Points']) * 100
 
     if not nan_vals_key in output_cols:
       output_cols.append(nan_vals_key)
@@ -66,7 +73,8 @@ for i, cycle in enumerate(cycles):
 cycle_df.set_index('Cycle', inplace=True)
 
 # Write to file
-cycle_df.to_latex('./cycle_checks.tex', columns=output_cols, float_format='%.2f')
+cycle_df.to_latex('./cycle_checks.tex',
+                  columns=output_cols, float_format='%.2f')
 
 # =========================================================================
 # Create histograms of each solar cycle
@@ -84,18 +92,20 @@ for key, label in zip(keys, labels):
   for i in range(nrows):
     for j in range(ncols):
       idx = i * ncols + j
-      
+
       cycle = cycles[idx]
       cycle_start = datetime_from_cycle(solar_cycles, cycle)
       cycle_end = datetime_from_cycle(solar_cycles, cycle, key='end')
-      cycle_data = dp.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
+      cycle_data = dapr.get_omni_rtn_data(
+          cycle_start, cycle_end).to_dataframe()
 
       data = remove_nans(cycle_data[key])
 
       axes[i][j].hist(cycle_data[key], bins=200)
       axes[i][j].set_xlabel(label)
       axes[i][j].set_ylabel("Frequency")
-      axes[i][j].set_title(f"Cycle {cycle}, {cycle_df[nan_vals_key][cycle]:.2f}% NaN")
+      axes[i][j].set_title(
+          f"Cycle {cycle}, {cycle_df[nan_vals_key][cycle]:.2f}% NaN")
 
   plt.savefig(fig_file, bbox_inches="tight")
 
@@ -108,10 +118,11 @@ fig_file = f"../figs/cycle_checks/hist2d_br_v.png"
 for i in range(nrows):
   for j in range(ncols):
     idx = i * ncols + j
-      
+
     cycle_start = datetime_from_cycle(solar_cycles, cycles[idx])
     cycle_end = datetime_from_cycle(solar_cycles, cycles[idx], key='end')
-    cycle_data = dp.get_omni_rtn_data(cycle_start, cycle_end).to_dataframe()
+    cycle_data = dapr.get_omni_rtn_data(
+        cycle_start, cycle_end).to_dataframe()
 
     br_data = remove_nans(cycle_data['BR'])
     vr_data = remove_nans(cycle_data['V'])

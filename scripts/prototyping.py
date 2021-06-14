@@ -1,27 +1,82 @@
 # %%
-import matplotlib.pyplot as plt
-from data_processing import get_omni_rtn_data, standardise_array
+# Imports
+from baseline.baseline_metrics import last_n_steps, mean_n_steps, median_n_steps
+from loss_functions import mse, mae
+import tensorflow.keras as keras
+from models import cnn_1d_model
 from datetime import datetime
+import data_processing as dapr
+import numpy as np
 
-# Check standardisation
-# Input data with maximum non-NaN range
+# %%
+# Load 1 year of data for quick testing
 START_TIME = datetime(1995, 1, 1)
-END_TIME = datetime(2020, 12, 31)
+END_TIME = datetime(2019, 12, 31)
 
-data = get_omni_rtn_data(START_TIME, END_TIME).to_dataframe()
-keys = ["N", "V", "ABS_B"]
+# Use only a year of data when using optuna
+INPUT_LENGTH = 24
+OUTPUT_LENGTH = 24
+NUM_FEATURES = 4
 
-fig, axes = plt.subplots(2, 3, figsize=(10, 10))
-for i, key in enumerate(keys):
-  # Normal
-  axes[0][i].hist(data[key])
-  axes[0][i].set_xlabel(f"{key}, Unstandardised")
-  axes[0][i].set_ylabel("Counts")
+data, keys, mean, std = dapr.omni_cycle_preprocess(START_TIME, END_TIME,
+                                                   get_geoeffectiveness=True,
+                                                   standardise=True)
 
-  # Standardised
-  std_data = standardise_array(data[key].values, data[key].values)
-  axes[1][i].hist(std_data)
-  axes[1][i].set_xlabel(f"{key}, Standardised")
-  axes[1][i].set_ylabel("Counts")
+for key in data.keys():
+  # Check dimensionality and remove geoeffectiveness from each
+  # last index is G by default
+  data[key] = data[key][:, :, :keys.index("G")]
+  print(f"{key} shape: {data[key].shape}")
+  print(
+      f"{key} (Min, Max): ({np.min(data[key], axis=(0, 1))}, {np.max(data[key], axis=(0, 1))})")
+  print(f"{key} (Mean, sigma): ({mean}, {std})")
+
+# Remove 'G' mean and std
+mean = mean[:-1]
+std = std[:-1]
+
+# %%
+# Let's fit the 1D CNN
+
+model = cnn_1d_model(INPUT_LENGTH, NUM_FEATURES, OUTPUT_LENGTH)
+model.compile(optimizer="adam", loss="mae", metrics=["mse"])
+print(model.summary())
+
+model.fit(data['train_in'], data['train_out'], batch_size=32, epochs=30,
+          validation_data=(data['val_in'], data['val_out']),
+          callbacks=[
+    keras.callbacks.EarlyStopping(restore_best_weights=True,
+                                  patience=10),
+    keras.callbacks.ModelCheckpoint(f"./models/cnn-1d.h5",
+                                    save_best_only=True)
+])
+
+# Validation
+model.evaluate(data['val_in'], data['val_out'])
+# %%
+# Calculate baseline metric losses
+baseline_dict = {
+    'last_n': last_n_steps,
+    'mean_n': mean_n_steps,
+    'median_n': median_n_steps
+}
+# Add max and min!
+
+baseline_evals = {}
+mse_losses = {}
+mae_losses = {}
+
+
+for key, baseline in baseline_dict.items():
+  baseline_evals[key] = dapr.unstandardise_array(
+      baseline(data['val_in'], n=24, repeated=True), mean, std)
+  mse_losses[key] = mse(baseline_evals[key], data['val_out'])
+  mae_losses[key] = mae(baseline_evals[key], data['val_out'])
+
+  print(f"{key}: MSE loss = {mse_losses[key]:.4f}")
+  print(f"{key}: MAE loss = {mae_losses[key]:.4f}")
+
+# print(data['val_in'][-1])
+# print(baseline_evals['last_n'][-1])
 
 # %%

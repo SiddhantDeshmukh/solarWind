@@ -4,16 +4,14 @@
 # =========================================================================
 # Imports
 # =========================================================================
-from collections import defaultdict
 from typing import Dict, List, Tuple
 import numpy as np
 import heliopy.data.omni as omni
 from astropy.units import Quantity
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import torch
 from torch.functional import Tensor
-from torch.utils.data.dataloader import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 from torch.utils.data.dataset import Dataset
@@ -63,12 +61,19 @@ def standardise_array(array: np.ndarray, std_array: np.ndarray):
   # Normalises data to have a mean of 0 and a variance of 1
   # 'array' is the array to normalise, 'std_array' is the array to
   # use for mean and std_dev
-  # e.g. 'array' could be a
-  mean, std = np.nanmean(std_array, axis=0), np.nanstd(std_array, axis=0)
+  mean, std = np.nanmean(std_array, axis=0), \
+      np.nanstd(std_array, axis=0)
   normalised_array = (array - mean) / std
 
   return normalised_array, mean, std
 
+
+def unstandardise_array(normalised_array: np.ndarray, mean: float, std: float):
+  # Given a mean and variance, inverts standardisation performed by
+  # 'standardise_array()'
+  array = normalised_array * std + mean
+
+  return array
 
 # =========================================================================
 # Timestamping
@@ -147,8 +152,9 @@ def get_omni_rtn_data(start_time: datetime, end_time: datetime):
 
   # Change 'start' and 'end' times to include an extra hour since the
   # getter is exclusive of edges
-  omni_data = omni._omni(start_time - timedelta(hours=1), end_time + timedelta(hours=1),
-                         identifier=identifier, intervals='yearly', warn_missing_units=False)
+  omni_data = omni._omni(start_time, end_time,
+                         identifier=identifier, intervals='yearly',
+                         warn_missing_units=False)
 
   return omni_data
 
@@ -265,7 +271,8 @@ def slice_data_ranges(input_data: np.ndarray, output_data: np.ndarray,
 
 def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
                           keys=["BR"], get_geoeffectiveness=False,
-                          make_tensors=False, standardise=False, n_hours=24):
+                          make_tensors=False, standardise=False,
+                          n_hours_in=24):
   # 'normalisation_limits' is tuple (min-max); all keys normalised to this
   data = get_omni_rtn_data(start_time, end_time).to_dataframe()
 
@@ -284,27 +291,20 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
 
   data = data[keys]
 
-  # Normalise here! Probably need to normalise EACH key SEPARATELY
-  # Instead of passing it in, just create a dict with standard values with
-  # a 'standard_normalisation' bool
-  # std_norm_lim = defaultdict(lambda: (0, 1), {})
-
-  # Remove all NaNs (and change to Numpy arrays)
-  inputs, outputs = lstm_prepare_nd(data.values, n_hours, n_hours)
-
   # Just divide 60/20/20 train/val/test
-  train_end_idx = int(0.6 * len(inputs))
-  val_end_idx = int(0.8 * len(inputs))
+  train_end_idx = int(0.6 * len(data))
+  val_end_idx = int(0.8 * len(data))
 
   train_data = data.values[:train_end_idx]
-  train_in = inputs[:train_end_idx]
-  train_out = outputs[:train_end_idx]
+  val_data = data.values[train_end_idx:val_end_idx]
+  test_data = data.values[val_end_idx:]
 
-  val_in = inputs[train_end_idx:val_end_idx]
-  val_out = outputs[train_end_idx:val_end_idx]
-
-  test_in = inputs[val_end_idx:]
-  test_out = outputs[val_end_idx:]
+  train_in, train_out = lstm_prepare_nd(
+      train_data, n_hours_in, n_hours_in)
+  val_in, val_out = lstm_prepare_nd(
+      val_data, n_hours_in, n_hours_in)
+  test_in, test_out = lstm_prepare_nd(
+      test_data, n_hours_in, n_hours_in)
 
   arr_dict = {
       "train_in": train_in,
@@ -318,8 +318,9 @@ def omni_cycle_preprocess(start_time: datetime, end_time: datetime,
   if standardise:
     for key, values in arr_dict.items():
       # Do not standardise 'test'
-      if key.startswith('test'):
-        print(f"Found testing data {key}, not standardising.")
+      # Do not standardise outputs
+      if key.endswith('_out'):
+        print(f"Not standardising output for {key}, not standardising.")
       else:
         print(f"Standardising {key} to have mean 0, variance 1.")
         arr_dict[key], mean, std = standardise_array(values, train_data)
