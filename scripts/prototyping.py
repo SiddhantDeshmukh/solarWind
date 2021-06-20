@@ -9,7 +9,7 @@ import data_processing as dapr
 import numpy as np
 
 # %%
-# Load 1 year of data for quick testing
+# Load data
 START_TIME = datetime(1995, 1, 1)
 END_TIME = datetime(2019, 12, 31)
 
@@ -38,21 +38,27 @@ std = std[:-1]
 # %%
 # Let's fit the 1D CNN
 
-model = cnn_1d_model(INPUT_LENGTH, NUM_FEATURES, OUTPUT_LENGTH)
-model.compile(optimizer="adam", loss="mae", metrics=["mse"])
-print(model.summary())
+# model = cnn_1d_model(INPUT_LENGTH, NUM_FEATURES, OUTPUT_LENGTH)
+# model.compile(optimizer="adam", loss="mae", metrics=["mse"])
+# print(model.summary())
 
-model.fit(data['train_in'], data['train_out'], batch_size=32, epochs=30,
-          validation_data=(data['val_in'], data['val_out']),
-          callbacks=[
-    keras.callbacks.EarlyStopping(restore_best_weights=True,
-                                  patience=10),
-    keras.callbacks.ModelCheckpoint(f"./models/cnn-1d.h5",
-                                    save_best_only=True)
-])
+# model.fit(data['train_in'], data['train_out'], batch_size=32, epochs=30,
+#           validation_data=(data['val_in'], data['val_out']),
+#           callbacks=[
+#     keras.callbacks.EarlyStopping(restore_best_weights=True,
+#                                   patience=10),
+#     keras.callbacks.ModelCheckpoint(f"./models/cnn-1d.h5",
+#                                     save_best_only=True)
+# ])
+model = keras.models.load_model('./models/cnn-1d.h5')
 
 # Validation
+print("Training")
+model.evaluate(data['train_in'], data['train_out'])
+print("Validation")
 model.evaluate(data['val_in'], data['val_out'])
+print("Testing")
+model.evaluate(data['test_in'], data['test_out'])
 # %%
 # Calculate baseline metric losses
 baseline_dict = {
