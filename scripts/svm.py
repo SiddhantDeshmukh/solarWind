@@ -40,8 +40,8 @@ data, keys, mean, std = dapr.omni_cycle_preprocess(START_TIME, END_TIME,
 for key in data.keys():
   # Check dimensionality
   print(f"{key} shape: {data[key].shape}")
-  print(
-      f"{key} (Min, Max): ({np.min(data[key], axis=(0, 1))}, {np.max(data[key], axis=(0, 1))})")
+  print(f"{key}(Min, Max): ({np.min(data[key], axis=(0, 1))},\
+                            {np.max(data[key], axis=(0, 1))})")
   print(f"{key} (Mean, sigma): ({mean}, {std})")
 
 
